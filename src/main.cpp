@@ -8,9 +8,23 @@
 #define YPAD 6
 #define MARGIN 6
 
-struct IVec2{
-    int x {0};
-    int y {0};
+template <typename T>
+struct Vec2{
+    T x;
+    T y;
+    
+    Vec2<T> operator-(const Vec2<T>& other) const{
+        return {x-other.x, y-other.y};
+    }
+    Vec2<T> operator+(const Vec2<T>& other) const{
+        return {x+other.x, y+other.y};
+    }
+    Vec2<T> operator*(const float t) const{
+        return {x*t, y*t};
+    }
+    bool operator==(const Vec2<T>& other) const{
+        return (x==other.x && y==other.y);
+    }
 };
 
 struct Cursor{
