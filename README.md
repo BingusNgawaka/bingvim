@@ -38,4 +38,7 @@ any kind of steps for usage or general docs
 
 ## Design Decisions
 problems during development and chosen solns and design decisions
+Buffer has a vector of lines which can be displayed or edited also has bool for if it's been modified, the filename, and an undotree
+Windows have an attached buffer, the top line visible, the amount of lines visible and the amount of cols visible, and cursor pos
+UndoEntry contains cursor pos, removed and added lines, a parent, and list of children so we can traverse both ways
 

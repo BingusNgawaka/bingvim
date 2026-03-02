@@ -1,17 +1,16 @@
-#include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <ncurses.h>
+#include <string>
 #include <vector>
 
-#define XPAD 12
-#define YPAD 6
-#define MARGIN 6
+#define SCROLL_BUFFER 6
 
 template <typename T>
 struct Vec2{
-    T x;
-    T y;
+    T x {};
+    T y {};
     
     Vec2<T> operator-(const Vec2<T>& other) const{
         return {x-other.x, y-other.y};
@@ -25,19 +24,25 @@ struct Vec2{
     bool operator==(const Vec2<T>& other) const{
         return (x==other.x && y==other.y);
     }
+
+    void print(std::string vecName = "Vec2"){
+        printf("%s(%d, %d)", vecName.c_str(), x, y);
+    }
 };
 
-struct Cursor{
-    IVec2 pos;
-    IVec2 offset;
-    char mode {'n'};
-    char last_input {};
-    std::string filepath {};
-    std::string command {};
-    bool running {true};
-};
+std::vector<std::string> readFile(std::string filepath){
+    std::vector<std::string> lines {};
 
-IVec2 get_terminal_size(){
+    std::ifstream file(filepath);
+    std::string str;
+    while(std::getline(file, str)){
+        lines.push_back(str);
+    }
+
+    return lines;
+}
+
+Vec2<int> getTerminalSize(){
     int terminalW;
     int terminalH;
     getmaxyx(stdscr, terminalH, terminalW);
@@ -45,22 +50,17 @@ IVec2 get_terminal_size(){
     return {terminalW, terminalH};
 }
 
-std::vector<std::vector<char>> read_file(std::string filepath){
-    std::vector<std::vector<char>> lines {};
+/*
 
-    std::ifstream file(filepath);
-    std::string str;
-    int line_num {};
-    while(std::getline(file, str)){
-        lines.push_back({});
-        for(int i{}; i < str.size(); ++i){
-            lines.at(line_num).push_back(str.at(i));
-        }
-        line_num++;
-    }
-
-    return lines;
-}
+struct Cursor{
+    Vec2<int> pos;
+    Vec2<int> offset;
+    char mode {'n'};
+    char last_input {};
+    std::string filepath {};
+    std::string command {};
+    bool running {true};
+};
 
 void write_file(std::vector<std::vector<char>> lines, std::string filepath){
     std::ofstream file(filepath, std::ios::trunc);
@@ -76,7 +76,7 @@ void write_file(std::vector<std::vector<char>> lines, std::string filepath){
 }
 
 void show_screen(std::vector<std::vector<char>> lines, Cursor& cursor){
-    IVec2 term {get_terminal_size()};
+    Vec2<int> term {get_terminal_size()};
 
     // handle screen scrolling
     int visual_curs_x {cursor.pos.x - cursor.offset.x};
@@ -270,64 +270,120 @@ void handle_command_mode(std::vector<std::vector<char>>& lines, Cursor& cursor){
 
     cursor.command.push_back(cursor.last_input);
 }
+*/
 
-int main(int argc, char** argv){
-    std::vector<std::vector<char>> lines {};
-    Cursor cursor;
+struct UndoEntry{
+    Vec2<std::size_t> cursorPos;
 
-    if(argc > 1){
-        cursor.filepath = argv[1];
-        lines = read_file(argv[1]);
-    }else{
-        lines.push_back({});
+    std::vector<std::string> linesAdded;
+    std::vector<std::string> linesRemoved;
+
+    UndoEntry* parent;
+    std::vector<UndoEntry*> children;
+};
+
+struct Buffer{
+    std::vector<std::string> lines;
+    bool modified;
+    std::string filepath;
+    
+    UndoEntry* rootUndo;
+    UndoEntry* currentUndo;
+};
+
+struct Window{
+    Buffer* buf;
+    Vec2<std::size_t> cursorPos;
+
+    WINDOW* winPtr; // curses window
+
+    std::size_t topLine;
+    Vec2<int> viewportSize;
+};
+
+void moveToCursorPos(Window& currWin){
+    wmove(currWin.winPtr, static_cast<int>(currWin.cursorPos.y), static_cast<int>(currWin.cursorPos.x));
+}
+
+void refreshWindow(Window& currWin){
+    WINDOW* win {currWin.winPtr};
+    werase(win);
+
+    for(std::size_t row{}; static_cast<int>(row) < currWin.viewportSize.y; ++row){
+        mvwprintw(win, static_cast<int>(row), 0, "%s", currWin.buf->lines.at(row+currWin.topLine).c_str());
     }
 
+    moveToCursorPos(currWin);
+
+    wrefresh(win);
+}
+
+void handleBufferInput(Window& win, int ch){
+    if(ch == 'h' && win.cursorPos.x > 0)
+        --win.cursorPos.x;
+
+    if(ch == 'k'){
+        //scrolling logic todo
+        if(win.cursorPos.y <= SCROLL_BUFFER && win.topLine > 0){
+            --win.topLine;
+        }else if(win.cursorPos.y > 0){
+            --win.cursorPos.y;
+        }
+    }
+
+    if(ch == 'j'){
+        //scrolling logic todo
+        if(win.cursorPos.y >= win.viewportSize.y - (1+SCROLL_BUFFER)){
+            ++win.topLine;
+        }else{
+            ++win.cursorPos.y;
+        }
+    }
+    if(ch == 'l'){
+        ++win.cursorPos.x;
+    }
+}
+
+int main(int argc, char** argv){
     initscr();
     cbreak();
     noecho();
+    keypad(stdscr, TRUE); // enable fn keys
+
+    /* Color Shit
     start_color();
 
     init_pair(1, COLOR_GREEN, COLOR_BLACK);
     init_pair(2, COLOR_WHITE, COLOR_BLACK);
     attron(COLOR_PAIR(1));
+    */
 
-    while(cursor.running){
-        // clear prev buffer
-        // write new screen to buffer
-        // move cursor to correct pos
-        // show buffer
-        erase();
-        show_screen(lines, cursor);
+    std::vector<Buffer> buffers {};
 
-        IVec2 term {get_terminal_size()};
+    if(argc > 1){
+        std::string openingFilepath {argv[1]};
+        UndoEntry* undoTreeRoot {new UndoEntry{{0, 0}, {}, {}, nullptr, {}}};
 
-        if(cursor.mode == 'c'){
-            mvprintw(term.y-1, 1, ":%s", cursor.command.c_str());
-            move(term.y-1, 2 + cursor.command.size());
-        }else{
-            move(cursor.pos.y - cursor.offset.y, cursor.pos.x + MARGIN - cursor.offset.x);
-        }
+        Buffer new_buf {readFile(openingFilepath), false, openingFilepath, undoTreeRoot, undoTreeRoot};
+        buffers.push_back(new_buf);
+    }else{
+        return -1;
+    }
 
-        // debug shit can go here to render over the screen
-        //printw("%d, %d", cursor.pos.x, cursor.pos.y);
-        //printw(" lines.size(), %zu", lines.size());
-        //printw("input: %d", input);
+    Vec2<int> terminalSize {getTerminalSize()};
 
-        refresh();
-        cursor.last_input = getch();
+    std::size_t currWindow {0};
+    std::vector<Window> windows{
+        {&buffers[0], {0,0}, newwin(terminalSize.y, terminalSize.x, 0, 0), 0, terminalSize}
+    };
 
-        if(cursor.mode == 'n'){
-            handle_normal_mode(lines, cursor);
-            continue;
-        }
-        if(cursor.mode == 'i'){
-            handle_input_mode(lines, cursor);
-            continue;
-        }
-        if(cursor.mode == 'c'){
-            handle_command_mode(lines, cursor);
-            continue;
-        }
+    refresh();
+    refreshWindow(windows[currWindow]);
+
+    int ch;
+    while((ch = getch()) != KEY_F(1)){
+        handleBufferInput(windows[currWindow], ch);
+        refreshWindow(windows[currWindow]);
     }
 
     endwin();
