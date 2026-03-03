@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -8,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#define DEBUG false
+#define DEBUG true
 
 #define SCROLL_BUFFER_Y 8
 #define SCROLL_BUFFER_X 8
@@ -121,43 +123,57 @@ struct Buffer{
 
 struct Viewport{
     Buffer* buf;
-    Vec2<int> cursorPos;
-    Vec2<int> visualCursorPos;
+    Vec2<int> absolutePos;
     Vec2<int> scrollPos;
-    Vec2<int> desiredScroll;
     Vec2<int> size;
+    int desiredCol;
 
     Viewport(Buffer* buf):
         buf(buf),
-        cursorPos({0,0}),
-        visualCursorPos({0,0}),
+        absolutePos({0,0}),
         scrollPos({0,0}),
-        desiredScroll({0,0}),
-        size({0,0}){}
+        size({0,0}),
+        desiredCol(0){}
 
     void setSize(Vec2<int> newSize){
         size = newSize;
     }
 
     std::string getCurrentLine(){
-        return buf->lines.at(static_cast<std::size_t>(cursorPos.y + scrollPos.y));
-    }
-
-    void boundVisualCursorToText(){
-        std::string line {getCurrentLine()};
-        int needToScrollBack {static_cast<int>(getCurrentLine().size()) - (1 + scrollPos.x)};
-        int desiredPos {std::max(0, needToScrollBack)};
-        if(static_cast<std::size_t>(cursorPos.x) >= desiredPos){
-            visualCursorPos.x = desiredPos;
-            if(needToScrollBack < 0 && scrollPos.x > 0)
-                scrollPos.x = std::max(scrollPos.x+needToScrollBack, 0);
-        }
+        return buf->lines.at(static_cast<std::size_t>(absolutePos.y));
     }
 
     void moveCursor(Vec2<int> dv){
         // move cursor by dv.x and dv.y
         // if our new cursor loc is outside the range of SCROLL_BUFFER
-        // then we clamp our new loc and scroll as much as we can instead
+        // then we set scroll to how far outside it is
+
+        absolutePos += dv;
+
+        absolutePos.y = std::clamp(absolutePos.y, 0, std::max(0, static_cast<int>(buf->lines.size())-1));
+        int furthestXOnCurrLine {std::max(0, static_cast<int>(getCurrentLine().size())-1)};
+        absolutePos.x = std::clamp(absolutePos.x, 0, furthestXOnCurrLine);
+
+        if(dv.x != 0)
+            desiredCol = absolutePos.x;
+
+        if(desiredCol != absolutePos.x){
+            absolutePos.x = std::min(desiredCol, furthestXOnCurrLine);
+        }
+
+
+        if(absolutePos.y < scrollPos.y + SCROLL_BUFFER_Y){
+            scrollPos.y = std::max(0, absolutePos.y - SCROLL_BUFFER_Y);
+        }else if (absolutePos.y >= scrollPos.y + size.y - SCROLL_BUFFER_Y) {
+            scrollPos.y = absolutePos.y - (size.y - 1) + SCROLL_BUFFER_Y;
+        }
+        if(absolutePos.x < scrollPos.x + SCROLL_BUFFER_X){
+            scrollPos.x = std::max(0, absolutePos.x - SCROLL_BUFFER_X);
+        }else if (absolutePos.x >= scrollPos.x + size.x - SCROLL_BUFFER_X) {
+            scrollPos.x = absolutePos.x - (size.x - 1) + SCROLL_BUFFER_X;
+        }
+
+        /*
         if(dv.x != 0)
             cursorPos.x = visualCursorPos.x;
         if(dv.y != 0)
@@ -193,6 +209,7 @@ struct Viewport{
         visualCursorPos = cursorPos;
 
         boundVisualCursorToText();
+        */
     }
 
     // movement keybinds that i actually use
@@ -232,13 +249,30 @@ struct Viewport{
     }
 };
 
+/* need to get ccc working with tmux
+struct Color{
+    float R;
+    float G;
+    float B;
+
+    std::array<short, 3> getCursesColor(){
+        return {static_cast<short>(std::floor(1000*(R/256.f))), static_cast<short>(std::floor(1000*(G/256.f))), static_cast<short>(std::floor(1000*(B/256.f)))};
+    }
+};
+*/
+
 struct Pane{
     Viewport* view;
     WINDOW* window;
 
+    Pane(Viewport* view, WINDOW* window):
+        view(view), window(window){}
+
     void setSize(Vec2<int> size){
         view->setSize(size);
         wresize(window, size.y, size.x);
+        erase();
+        refresh();
     }
 
     Vec2<int> getSize(){
@@ -246,6 +280,7 @@ struct Pane{
     }
 
     void setPos(Vec2<int> pos){
+        mvwin(window, pos.y, pos.y);
     }
 
     Vec2<int> getPos(){
@@ -253,29 +288,31 @@ struct Pane{
     }
 
     void render(){
+        wattron(window, COLOR_PAIR(1));
         for(int row{}; row < std::min(view->size.y, static_cast<int>(view->buf->lines.size()) - (view->scrollPos.y)); ++row){
             std::string line {view->buf->lines.at(static_cast<std::size_t>(row+view->scrollPos.y))};
             wmove(window, static_cast<int>(row), 0);
             wclrtoeol(window);
-            if(view->scrollPos.x < line.size()){
-                line = line.substr(view->scrollPos.x);
+            if(static_cast<std::size_t>(view->scrollPos.x) < line.size()){
+                line = line.substr(static_cast<std::size_t>(view->scrollPos.x));
                 wprintw(window, "%s", line.c_str());
             }
         }
 
-        wmove(window, view->visualCursorPos.y, view->visualCursorPos.x);
+        Vec2<int> viewPos {view->absolutePos - view->scrollPos};
+        wmove(window, viewPos.y, viewPos.x);
         wrefresh(window);
 
         if(DEBUG){
-            int x = 32;
+            //TODO make this its own window itd be so much easier lol
+            int x = 100;
             int y = 16;
-            mvwprintw(stdscr, y, x-10, "+-----------------+");
-            mvwprintw(stdscr, y+1, x-10, "  cursorPos(%d, %d)  ", view->cursorPos.x, view->cursorPos.y);
-            mvwprintw(stdscr, y+2, x-10, "  visualPos(%d, %d)  ", view->visualCursorPos.x, view->visualCursorPos.y);
-            mvwprintw(stdscr, y+3, x-10, "  scrollPos(%d, %d)  ", view->scrollPos.x, view->scrollPos.y);
-            mvwprintw(stdscr, y+4, x-10, " linesize(%lu) ", view->buf->lines.size());
-            mvwprintw(stdscr, y+5, x-10, " desiredScroll(%d, %d) ", view->desiredScroll.x, view->desiredScroll.y);
-            mvwprintw(stdscr, y+6, x-10, " %d ", static_cast<int>(view->getCurrentLine().size()) - (1 + view->scrollPos.x)); 
+            mvwprintw(stdscr, y, x-10, "+------debug------+");
+            mvwprintw(stdscr, y+1, x-10, "  absPos(%d, %d)  ", view->absolutePos.x, view->absolutePos.y);
+            mvwprintw(stdscr, y+3, x-10, "  desiredCol(%d)  ", view->desiredCol);
+            mvwprintw(stdscr, y+4, x-10, "  scrollPos(%d, %d)  ", view->scrollPos.x, view->scrollPos.y);
+            mvwprintw(stdscr, y+5, x-10, "  linesize(%lu) ", view->getCurrentLine().size());
+            mvwprintw(stdscr, y+6, x-10, "  ccc(%s) ", std::to_string(can_change_color()).c_str());
             mvwprintw(stdscr, y+7, x-10, "+-----------------+");
             refresh();
             wrefresh(window);
@@ -372,15 +409,9 @@ int main(int argc, char** argv){
     noecho();
     keypad(stdscr, TRUE); // enable fn keys
 
-    /* Color Shit
-    start_color();
+    //start_color();
 
-    init_pair(1, COLOR_GREEN, COLOR_BLACK);
-    init_pair(2, COLOR_WHITE, COLOR_BLACK);
-    attron(COLOR_PAIR(1));
-    */
-
-    Vec2<int> terminalSize {32, 16};
+    Vec2<int> terminalSize {getTerminalSize() - Vec2<int>{2,4}};
 
     Editor editor {};
 
@@ -389,7 +420,7 @@ int main(int argc, char** argv){
         std::string openingFilepath {argv[1]};
         std::size_t bufIndex {editor.addBuffer(readFile(openingFilepath), openingFilepath)};
         std::size_t viewportIndex {editor.addViewport(bufIndex)};
-        editor.addPane(viewportIndex, {10,10}, terminalSize);
+        editor.addPane(viewportIndex, {1,1}, terminalSize);
     }else{
         return -1;
     }
@@ -400,8 +431,11 @@ int main(int argc, char** argv){
     int ch;
     while((ch = getch()) != KEY_F(1)){
         editor.getCurrPane().view->handleBufferInput(ch);
-        if(ch == 'y'){
+        if(ch == 'e'){
             editor.getCurrPane().setSize(editor.getCurrPane().getSize() + Vec2<int>{1, 1});
+        }
+        if(ch == 'q'){
+            editor.getCurrPane().setSize(editor.getCurrPane().getSize() - Vec2<int>{1, 1});
         }
 
         editor.getCurrPane().render();
