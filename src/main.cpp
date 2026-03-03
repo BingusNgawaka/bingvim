@@ -2,7 +2,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <memory>
 #include <ncurses.h>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -22,7 +24,26 @@ struct Vec2{
     Vec2<T> operator+(const Vec2<T>& other) const{
         return {x+other.x, y+other.y};
     }
-    Vec2<T> operator*(const float t) const{
+    void operator-=(const Vec2<T>& other){
+        x -= other.x;
+        y -= other.y;
+    }
+    void operator*=(const T t){
+        x *= t;
+        y *= t;
+    }
+    void operator/=(const T t){
+        x /= t;
+        y /= t;
+    }
+    void operator+=(const Vec2<T>& other){
+        x += other.x;
+        y += other.y;
+    }
+    Vec2<T> operator/(const T t) const{
+        return {x/t, y/t};
+    }
+    Vec2<T> operator*(const T t) const{
         return {x*t, y*t};
     }
     bool operator==(const Vec2<T>& other) const{
@@ -84,11 +105,18 @@ struct UndoEntry{
 
 struct Buffer{
     std::vector<std::string> lines;
-    bool modified;
     std::string filepath;
-    
+
+    bool modified;
     UndoEntry* rootUndo;
     UndoEntry* currentUndo;
+
+    Buffer(std::vector<std::string> lines, std::string filepath):
+        lines(lines),
+        filepath(filepath),
+        modified(false),
+        rootUndo(new UndoEntry{{0, 0}, {}, {}, nullptr, {}}),
+        currentUndo(rootUndo){}
 };
 
 struct Viewport{
@@ -96,7 +124,20 @@ struct Viewport{
     Vec2<int> cursorPos;
     Vec2<int> visualCursorPos;
     Vec2<int> scrollPos;
+    Vec2<int> desiredScroll;
     Vec2<int> size;
+
+    Viewport(Buffer* buf):
+        buf(buf),
+        cursorPos({0,0}),
+        visualCursorPos({0,0}),
+        scrollPos({0,0}),
+        desiredScroll({0,0}),
+        size({0,0}){}
+
+    void setSize(Vec2<int> newSize){
+        size = newSize;
+    }
 
     std::string getCurrentLine(){
         return buf->lines.at(static_cast<std::size_t>(cursorPos.y + scrollPos.y));
@@ -104,8 +145,13 @@ struct Viewport{
 
     void boundVisualCursorToText(){
         std::string line {getCurrentLine()};
-        if(static_cast<std::size_t>(cursorPos.x) >= line.size())
-            visualCursorPos.x = std::max(0, static_cast<int>(line.size()) - 1);
+        int needToScrollBack {static_cast<int>(getCurrentLine().size()) - (1 + scrollPos.x)};
+        int desiredPos {std::max(0, needToScrollBack)};
+        if(static_cast<std::size_t>(cursorPos.x) >= desiredPos){
+            visualCursorPos.x = desiredPos;
+            if(needToScrollBack < 0 && scrollPos.x > 0)
+                scrollPos.x = std::max(scrollPos.x+needToScrollBack, 0);
+        }
     }
 
     void moveCursor(Vec2<int> dv){
@@ -118,15 +164,6 @@ struct Viewport{
             cursorPos.y = visualCursorPos.y;
 
         Vec2<int> newPos {cursorPos + dv};
-        // this bounds actual cursor x to line but only if we change x
-        // otherwise you can go one ahead of visual x at the end of a line
-        // and it isnt set to the visual cursor
-        // idk if this is stupid but it works
-        if(dv.x != 0){
-            std::string line {getCurrentLine()};
-            if(static_cast<std::size_t>(newPos.x) >= line.size())
-                newPos.x = std::max(0, static_cast<int>(line.size()) - 1);
-        }
 
         // scroll bound changes as we reach the edge of the screen (scrollPos.x/y = 0)
         Vec2<int> scrollBound {(scrollPos.x > 0) ? SCROLL_BUFFER_X : 0, (scrollPos.y > 0) ? SCROLL_BUFFER_Y : 0};
@@ -136,6 +173,22 @@ struct Viewport{
         Vec2<int> finalDiff {newPos - cursorPos};
         scrollPos.x = std::max(scrollPos.x + finalDiff.x, 0);
         scrollPos.y = std::max(scrollPos.y + finalDiff.y, 0);
+
+        cursorPos.y = std::clamp(cursorPos.y, 0, static_cast<int>(buf->lines.size()) - scrollPos.y - 1);
+
+        if(dv.x != 0){
+            desiredScroll.x = scrollPos.x;
+            int needToScrollBack {static_cast<int>(getCurrentLine().size()) - (1 + scrollPos.x)};
+            cursorPos.x = std::clamp(cursorPos.x, 0, std::max(0, needToScrollBack));
+        }
+        if(dv.y != 0){
+            desiredScroll.y = scrollPos.y;
+            if(cursorPos.x + desiredScroll.x <= getCurrentLine().size() - 1){
+                scrollPos.x = desiredScroll.x;
+            }else if(scrollPos.x != desiredScroll.x && getCurrentLine().size() - 1 > size.x){
+                scrollPos.x = static_cast<int>(getCurrentLine().size()) - 1 - cursorPos.x;
+            }
+        }
 
         visualCursorPos = cursorPos;
 
@@ -147,6 +200,8 @@ struct Viewport{
     // hjkl
     // TODO:
     // w, e, b,
+    // state machine
+    // w look at curr cursor and keep going forward until not that type of char anymore
     // w jumps to next beggining of word, e to next end of word, b to the prev beggining of word
     // word delimiters: not (a-zA-Z, 0-9, _)
     // WORD delimiters: only whitespace
@@ -178,27 +233,98 @@ struct Viewport{
 };
 
 struct Pane{
-    Viewport view;
+    Viewport* view;
     WINDOW* window;
 
-    void render(){
-        werase(window);
+    void setSize(Vec2<int> size){
+        view->setSize(size);
+        wresize(window, size.y, size.x);
+    }
 
-        for(int row{}; row < view.size.y; ++row){
-            std::string line {view.buf->lines.at(static_cast<std::size_t>(row+view.scrollPos.y))};
-            mvwprintw(window, static_cast<int>(row), 0, "%s", line.substr(std::min((line.size()), static_cast<std::size_t>(view.scrollPos.x))).c_str());
+    Vec2<int> getSize(){
+        return view->size;
+    }
+
+    void setPos(Vec2<int> pos){
+    }
+
+    Vec2<int> getPos(){
+        return {getbegx(window), getbegy(window)};
+    }
+
+    void render(){
+        for(int row{}; row < std::min(view->size.y, static_cast<int>(view->buf->lines.size()) - (view->scrollPos.y)); ++row){
+            std::string line {view->buf->lines.at(static_cast<std::size_t>(row+view->scrollPos.y))};
+            wmove(window, static_cast<int>(row), 0);
+            wclrtoeol(window);
+            if(view->scrollPos.x < line.size()){
+                line = line.substr(view->scrollPos.x);
+                wprintw(window, "%s", line.c_str());
+            }
         }
+
+        wmove(window, view->visualCursorPos.y, view->visualCursorPos.x);
+        wrefresh(window);
 
         if(DEBUG){
-            mvwprintw(window, view.cursorPos.y, view.cursorPos.x, "+-----------------+");
-            mvwprintw(window, view.cursorPos.y+1, view.cursorPos.x, "  cursorPos(%d, %d)  ", view.cursorPos.x, view.cursorPos.y);
-            mvwprintw(window, view.cursorPos.y+2, view.cursorPos.x, "  visualPos(%d, %d)  ", view.visualCursorPos.x, view.visualCursorPos.y);
-            mvwprintw(window, view.cursorPos.y+3, view.cursorPos.x, "  scrollPos(%d, %d)  ", view.scrollPos.x, view.scrollPos.y);
-            mvwprintw(window, view.cursorPos.y+4, view.cursorPos.x, "+-----------------+");
-        }
+            int x = 32;
+            int y = 16;
+            mvwprintw(stdscr, y, x-10, "+-----------------+");
+            mvwprintw(stdscr, y+1, x-10, "  cursorPos(%d, %d)  ", view->cursorPos.x, view->cursorPos.y);
+            mvwprintw(stdscr, y+2, x-10, "  visualPos(%d, %d)  ", view->visualCursorPos.x, view->visualCursorPos.y);
+            mvwprintw(stdscr, y+3, x-10, "  scrollPos(%d, %d)  ", view->scrollPos.x, view->scrollPos.y);
+            mvwprintw(stdscr, y+4, x-10, " linesize(%lu) ", view->buf->lines.size());
+            mvwprintw(stdscr, y+5, x-10, " desiredScroll(%d, %d) ", view->desiredScroll.x, view->desiredScroll.y);
+            mvwprintw(stdscr, y+6, x-10, " %d ", static_cast<int>(view->getCurrentLine().size()) - (1 + view->scrollPos.x)); 
+            mvwprintw(stdscr, y+7, x-10, "+-----------------+");
+            refresh();
+            wrefresh(window);
 
-        wmove(window, view.visualCursorPos.y, view.visualCursorPos.x);
-        wrefresh(window);
+        }
+    }
+};
+
+enum Mode{
+    NORMAL, INSERT, VISUAL
+};
+
+struct Editor{
+    std::vector<std::unique_ptr<Buffer>> buffers {};
+    std::vector<std::unique_ptr<Viewport>> viewports {};
+    std::vector<Pane> panes {};
+
+    std::size_t activePane {0};
+    Mode currMode {NORMAL};
+
+    std::size_t addBuffer(std::vector<std::string> lines, std::string filepath){
+        buffers.push_back(std::make_unique<Buffer>(lines, filepath));
+
+        return buffers.size()-1;
+    }
+
+    std::size_t addViewport(std::size_t bufferIndex){
+        viewports.push_back(std::make_unique<Viewport>(buffers.at(bufferIndex).get()));
+        return viewports.size()-1;
+    }
+
+    std::size_t addPane(std::size_t viewportIndex, Vec2<int> pos, Vec2<int> size){
+        if(viewportIndex >= viewports.size())
+            throw std::out_of_range("viewport index out_of_range @ addPane");
+
+        viewports.at(viewportIndex)->setSize(size);
+
+        panes.push_back({
+            viewports.at(viewportIndex).get(),
+            // h, w, starty, startx
+            newwin(size.y, size.x, pos.y, pos.x)
+        });
+
+        activePane = panes.size() - 1;
+        return activePane;
+    }
+
+    Pane& getCurrPane(){
+        return panes.at(activePane);
     }
 };
 
@@ -254,38 +380,31 @@ int main(int argc, char** argv){
     attron(COLOR_PAIR(1));
     */
 
-    std::vector<Buffer> buffers {};
+    Vec2<int> terminalSize {32, 16};
+
+    Editor editor {};
+
 
     if(argc > 1){
         std::string openingFilepath {argv[1]};
-        UndoEntry* undoTreeRoot {new UndoEntry{{0, 0}, {}, {}, nullptr, {}}};
-
-        Buffer new_buf {readFile(openingFilepath), false, openingFilepath, undoTreeRoot, undoTreeRoot};
-        buffers.push_back(new_buf);
+        std::size_t bufIndex {editor.addBuffer(readFile(openingFilepath), openingFilepath)};
+        std::size_t viewportIndex {editor.addViewport(bufIndex)};
+        editor.addPane(viewportIndex, {10,10}, terminalSize);
     }else{
         return -1;
     }
 
-    Vec2<int> terminalSize {getTerminalSize()};
-
-    std::size_t currWindow {0};
-    std::vector<Viewport> windows{
-        // bound buffer, actualCursorPos, visualCursorPos, scrollPos, viewportSize
-        {&buffers[0], {0,0}, {0,0}, {0,0}, terminalSize}
-    };
-
-    std::size_t currPane {0};
-    std::vector<Pane> panes {
-        {windows.at(currWindow), newwin(terminalSize.y, terminalSize.x, 0, 0)}
-    };
-
     refresh();
-    panes.at(currPane).render();
+    editor.getCurrPane().render();
 
     int ch;
     while((ch = getch()) != KEY_F(1)){
-        panes.at(currPane).view.handleBufferInput(ch);
-        panes.at(currPane).render();
+        editor.getCurrPane().view->handleBufferInput(ch);
+        if(ch == 'y'){
+            editor.getCurrPane().setSize(editor.getCurrPane().getSize() + Vec2<int>{1, 1});
+        }
+
+        editor.getCurrPane().render();
     }
 
     endwin();

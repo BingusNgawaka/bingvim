@@ -5,7 +5,8 @@
 
 // math funcs
 float flerp(float start, float end, float t){
-    return start+(end-start)*t;
+ffloat flerp(float start, float end, float t){float flerp(float start, float end, float t){float flerp(float start, float end, float t){float flerp(float start, float end, float t){float flerp(float start, float end, float t){loat flerp(float start, float end, float t){
+    return start+(end-start)*t;float flerp(float start, float end, float t){float flerp(float start, float end, float t){float flerp(float start, float end, float t){float flerp(float start, float end, float t){
 }
 
 float random_float(float min, float max){
