@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <ncurses.h>
@@ -86,34 +87,65 @@ struct Buffer{
     UndoEntry* currentUndo;
 };
 
-struct Window{
+struct Viewport{
     Buffer* buf;
-    Vec2<std::size_t> cursorPos;
+    Vec2<int> cursorPos;
+    Vec2<int> scrollPos;
+    Vec2<int> size;
 
-    WINDOW* winPtr; // curses window
+    void moveCursor(Vec2<int> dv){
+        // move cursor by dv.x and dv.y
+        // if our new cursor loc is outside the range of SCROLL_BUFFER
+        // then we clamp our new loc and scroll as much as we can instead
+        Vec2<int> terminalSize {getTerminalSize()};
+        Vec2<int> newPos {cursorPos + dv};
 
-    Vec2<std::size_t> topLeft;
-    Vec2<int> viewportSize;
-};
+        // scroll bound changes as we reach the edge of the screen (scrollPos.x/y = 0)
+        Vec2<int> scrollBound {(scrollPos.x > 0) ? SCROLL_BUFFER_X : 0, (scrollPos.y > 0) ? SCROLL_BUFFER_Y : 0};
+        cursorPos.x = std::clamp(newPos.x, scrollBound.x, terminalSize.x - (1 + SCROLL_BUFFER_X));
+        cursorPos.y =  std::clamp(newPos.y, scrollBound.y, terminalSize.y - (1 + SCROLL_BUFFER_Y));
 
-void moveToCursorPos(Window& currWin){
-    wmove(currWin.winPtr, static_cast<int>(currWin.cursorPos.y), static_cast<int>(currWin.cursorPos.x));
-}
-
-void refreshWindow(Window& currWin){
-    WINDOW* win {currWin.winPtr};
-    werase(win);
-
-    for(std::size_t row{}; static_cast<int>(row) < currWin.viewportSize.y; ++row){
-        std::string line {currWin.buf->lines.at(row+currWin.topLeft.y)};
-        mvwprintw(win, static_cast<int>(row), 0, "%s", line.substr(std::min(line.size(), currWin.topLeft.x)).c_str());
+        Vec2<int> finalDiff {newPos - cursorPos};
+        scrollPos.x = std::max(scrollPos.x + finalDiff.x, 0);
+        scrollPos.y = std::max(scrollPos.y + finalDiff.y, 0);
     }
 
-    moveToCursorPos(currWin);
+    void handleBufferInput(int ch){
+        int movementAmnt {2};
+        if(ch == 'h')
+            moveCursor({-movementAmnt, 0});
+        if(ch == 'j')
+            moveCursor({0, movementAmnt});
+        if(ch == 'k')
+            moveCursor({0, -movementAmnt});
+        if(ch == 'l')
+            moveCursor({movementAmnt, 0});
+    }
+};
 
-    wrefresh(win);
-}
+struct Pane{
+    Viewport view;
+    WINDOW* window;
 
+    void render(){
+        werase(window);
+
+        for(std::size_t row{}; static_cast<int>(row) < view.size.y; ++row){
+            std::string line {view.buf->lines.at(row+view.scrollPos.y)};
+            mvwprintw(window, static_cast<int>(row), 0, "%s", line.substr(std::min(static_cast<int>(line.size()), view.scrollPos.x)).c_str());
+        }
+
+        mvwprintw(window, view.cursorPos.y, view.cursorPos.x, "+-----------------+");
+        mvwprintw(window, view.cursorPos.y+1, view.cursorPos.x, "  cursorPos(%d, %d)  ", view.cursorPos.x, view.cursorPos.y);
+        mvwprintw(window, view.cursorPos.y+2, view.cursorPos.x, "  scrollPos(%d, %d)  ", view.scrollPos.x, view.scrollPos.y);
+        mvwprintw(window, view.cursorPos.y+3, view.cursorPos.x, "+-----------------+");
+
+        wmove(window, view.cursorPos.y, view.cursorPos.x);
+        wrefresh(window);
+    }
+};
+
+/*
 void handleBufferInput(Window& win, int ch){
     if(ch == 'h'){
         if(win.cursorPos.x <= SCROLL_BUFFER_X && win.topLeft.x > 0){
@@ -149,6 +181,7 @@ void handleBufferInput(Window& win, int ch){
         }
     }
 }
+*/
 
 int main(int argc, char** argv){
     initscr();
@@ -179,17 +212,22 @@ int main(int argc, char** argv){
     Vec2<int> terminalSize {getTerminalSize()};
 
     std::size_t currWindow {0};
-    std::vector<Window> windows{
-        {&buffers[0], {0,0}, newwin(terminalSize.y, terminalSize.x, 0, 0), {0,0}, terminalSize}
+    std::vector<Viewport> windows{
+        {&buffers[0], {0,0}, {0,0}, terminalSize}
+    };
+
+    std::size_t currPane {0};
+    std::vector<Pane> panes {
+        {windows.at(currWindow), newwin(terminalSize.y, terminalSize.x, 0, 0)}
     };
 
     refresh();
-    refreshWindow(windows[currWindow]);
+    panes.at(currPane).render();
 
     int ch;
     while((ch = getch()) != KEY_F(1)){
-        handleBufferInput(windows[currWindow], ch);
-        refreshWindow(windows[currWindow]);
+        panes.at(currPane).view.handleBufferInput(ch);
+        panes.at(currPane).render();
     }
 
     endwin();
