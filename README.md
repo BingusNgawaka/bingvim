@@ -3,13 +3,8 @@ A minimal modal CLI text editor written in C++.
 
 ---
 
-## Table of Contents
-- [Features](#features)
-- [Motivation](#motivation)
-- [Demo](#demo)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Design Decisions](design-decisions)
+## Demo
+some kind of pic or gif showcasing basic usage
 
 ---
 
@@ -27,12 +22,6 @@ reframe if the project was simply for 'fun' or to learn to (most of my projects)
 problem: X is a blackbox to most developers
 goal: learn X and demistify by building it yourself
 add a list of technical goals
-
-
----
-
-## Demo
-some kind of pic or gif showcasing basic usage
 
 ---
 

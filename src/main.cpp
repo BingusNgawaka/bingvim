@@ -1,5 +1,5 @@
 #include <algorithm>
-#include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +14,12 @@
 
 #define SCROLL_BUFFER_Y 8
 #define SCROLL_BUFFER_X 8
+
+#define CTRL(x) ((x) & 0x1f)
+
+enum Mode{
+    NORMAL, INSERT, VISUAL
+};
 
 template <typename T>
 struct Vec2{
@@ -95,14 +101,14 @@ void write_file(std::vector<std::vector<char>> lines, std::string filepath){
 }
 */
 
-struct UndoEntry{
-    Vec2<std::size_t> cursorPos;
+struct BufferChange{
+    Vec2<int> cursorPos;
 
     std::vector<std::string> linesAdded;
     std::vector<std::string> linesRemoved;
 
-    UndoEntry* parent;
-    std::vector<UndoEntry*> children;
+    BufferChange* parent;
+    std::vector<BufferChange*> children;
 };
 
 struct Buffer{
@@ -110,15 +116,36 @@ struct Buffer{
     std::string filepath;
 
     bool modified;
-    UndoEntry* rootUndo;
-    UndoEntry* currentUndo;
+    BufferChange* rootChange;
+    BufferChange* lastChange;
 
     Buffer(std::vector<std::string> lines, std::string filepath):
         lines(lines),
         filepath(filepath),
         modified(false),
-        rootUndo(new UndoEntry{{0, 0}, {}, {}, nullptr, {}}),
-        currentUndo(rootUndo){}
+        rootChange(new BufferChange{{0, 0}, {}, {}, nullptr, {}}),
+        lastChange(rootChange){}
+
+    void addChange(Vec2<int> cursorPos, std::vector<std::string> linesAdded, std::vector<std::string> linesRemoved){
+        BufferChange* change {new BufferChange{cursorPos, linesAdded, linesRemoved, lastChange, {}}};
+        lastChange->children.push_back(change);
+        lastChange = change;
+    }
+
+    void applyChange(Vec2<int>& pos, std::vector<std::string>& linesToAdd, std::size_t  numOfLinesToRemove){
+        auto begin {lines.begin()+pos.y};
+        if(numOfLinesToRemove > 0){
+            lines.erase(begin, begin+static_cast<int>(numOfLinesToRemove));
+        }
+        lines.insert(begin, linesToAdd.begin(), linesToAdd.end());
+    }
+
+    void doChange(BufferChange* change){
+        applyChange(change->cursorPos, change->linesAdded, change->linesRemoved.size());
+    }
+    void undoChange(BufferChange* change){
+        applyChange(change->cursorPos, change->linesRemoved, change->linesAdded.size());
+    }
 };
 
 struct Viewport{
@@ -143,15 +170,20 @@ struct Viewport{
         return buf->lines.at(static_cast<std::size_t>(absolutePos.y));
     }
 
-    void moveCursor(Vec2<int> dv){
+    void moveCursor(Vec2<int> dv, Mode mode = Mode::NORMAL){
         // move cursor by dv.x and dv.y
         // if our new cursor loc is outside the range of SCROLL_BUFFER
         // then we set scroll to how far outside it is
 
         absolutePos += dv;
 
+
         absolutePos.y = std::clamp(absolutePos.y, 0, std::max(0, static_cast<int>(buf->lines.size())-1));
-        int furthestXOnCurrLine {std::max(0, static_cast<int>(getCurrentLine().size())-1)};
+
+        int furthestXOnCurrLine {static_cast<int>(getCurrentLine().size())};
+        if(mode != Mode::INSERT) --furthestXOnCurrLine;
+        furthestXOnCurrLine = std::max(0, furthestXOnCurrLine);
+
         absolutePos.x = std::clamp(absolutePos.x, 0, furthestXOnCurrLine);
 
         if(dv.x != 0)
@@ -173,80 +205,12 @@ struct Viewport{
             scrollPos.x = absolutePos.x - (size.x - 1) + SCROLL_BUFFER_X;
         }
 
-        /*
-        if(dv.x != 0)
-            cursorPos.x = visualCursorPos.x;
-        if(dv.y != 0)
-            cursorPos.y = visualCursorPos.y;
-
-        Vec2<int> newPos {cursorPos + dv};
-
-        // scroll bound changes as we reach the edge of the screen (scrollPos.x/y = 0)
-        Vec2<int> scrollBound {(scrollPos.x > 0) ? SCROLL_BUFFER_X : 0, (scrollPos.y > 0) ? SCROLL_BUFFER_Y : 0};
-        cursorPos.x = std::clamp(newPos.x, scrollBound.x, size.x - (1 + SCROLL_BUFFER_X));
-        cursorPos.y =  std::clamp(newPos.y, scrollBound.y, size.y - (1 + SCROLL_BUFFER_Y));
-
-        Vec2<int> finalDiff {newPos - cursorPos};
-        scrollPos.x = std::max(scrollPos.x + finalDiff.x, 0);
-        scrollPos.y = std::max(scrollPos.y + finalDiff.y, 0);
-
-        cursorPos.y = std::clamp(cursorPos.y, 0, static_cast<int>(buf->lines.size()) - scrollPos.y - 1);
-
-        if(dv.x != 0){
-            desiredScroll.x = scrollPos.x;
-            int needToScrollBack {static_cast<int>(getCurrentLine().size()) - (1 + scrollPos.x)};
-            cursorPos.x = std::clamp(cursorPos.x, 0, std::max(0, needToScrollBack));
-        }
-        if(dv.y != 0){
-            desiredScroll.y = scrollPos.y;
-            if(cursorPos.x + desiredScroll.x <= getCurrentLine().size() - 1){
-                scrollPos.x = desiredScroll.x;
-            }else if(scrollPos.x != desiredScroll.x && getCurrentLine().size() - 1 > size.x){
-                scrollPos.x = static_cast<int>(getCurrentLine().size()) - 1 - cursorPos.x;
-            }
-        }
-
-        visualCursorPos = cursorPos;
-
-        boundVisualCursorToText();
-        */
     }
 
-    // movement keybinds that i actually use
-    // DONE:
-    // hjkl
-    // TODO:
-    // w, e, b,
-    // state machine
-    // w look at curr cursor and keep going forward until not that type of char anymore
-    // w jumps to next beggining of word, e to next end of word, b to the prev beggining of word
-    // word delimiters: not (a-zA-Z, 0-9, _)
-    // WORD delimiters: only whitespace
-    // f, F with ; and ,
-    // / search does a regex search sooo
-    // $ end of line
-    // ^ beggining of text in line
-    //
-    // edit keybinds
-    // i, a, o, I, A, O
-    //
-    // paste buffer related keybinds
-    // yy - yank curr line
-    // nyy - yank n lines below
-    // 
-    //
-    // numbers to denote repeated commands
-    void handleBufferInput(int ch){
-        int movementAmnt {1};
-        if(ch == 'h')
-            moveCursor({-movementAmnt, 0});
-        if(ch == 'j')
-            moveCursor({0, movementAmnt});
-        if(ch == 'k')
-            moveCursor({0, -movementAmnt});
-        if(ch == 'l')
-            moveCursor({movementAmnt, 0});
+    void setCursor(Vec2<int> pos, Mode mode = Mode::NORMAL){
+        moveCursor(pos - absolutePos, mode);
     }
+
 };
 
 /* need to get ccc working with tmux
@@ -287,21 +251,28 @@ struct Pane{
         return {getbegx(window), getbegy(window)};
     }
 
+    void moveCursorToViewPos(){
+        Vec2<int> viewPos {view->absolutePos - view->scrollPos};
+        wmove(window, viewPos.y, viewPos.x);
+        wrefresh(window);
+    }
+
     void render(){
-        wattron(window, COLOR_PAIR(1));
-        for(int row{}; row < std::min(view->size.y, static_cast<int>(view->buf->lines.size()) - (view->scrollPos.y)); ++row){
-            std::string line {view->buf->lines.at(static_cast<std::size_t>(row+view->scrollPos.y))};
+        int maximumVisibleRowCount {std::min(view->size.y, static_cast<int>(view->buf->lines.size()) - (view->scrollPos.y))};
+        for(int row{}; row < view->size.y; ++row){
             wmove(window, static_cast<int>(row), 0);
             wclrtoeol(window);
+        }
+        for(int row{}; row < maximumVisibleRowCount; ++row){
+            std::string line {view->buf->lines.at(static_cast<std::size_t>(row+view->scrollPos.y))};
+            wmove(window, static_cast<int>(row), 0);
             if(static_cast<std::size_t>(view->scrollPos.x) < line.size()){
                 line = line.substr(static_cast<std::size_t>(view->scrollPos.x));
                 wprintw(window, "%s", line.c_str());
             }
         }
 
-        Vec2<int> viewPos {view->absolutePos - view->scrollPos};
-        wmove(window, viewPos.y, viewPos.x);
-        wrefresh(window);
+        moveCursorToViewPos();
 
         if(DEBUG){
             //TODO make this its own window itd be so much easier lol
@@ -313,16 +284,21 @@ struct Pane{
             mvwprintw(stdscr, y+4, x-10, "  scrollPos(%d, %d)  ", view->scrollPos.x, view->scrollPos.y);
             mvwprintw(stdscr, y+5, x-10, "  linesize(%lu) ", view->getCurrentLine().size());
             mvwprintw(stdscr, y+6, x-10, "  ccc(%s) ", std::to_string(can_change_color()).c_str());
-            mvwprintw(stdscr, y+7, x-10, "+-----------------+");
+            mvwprintw(stdscr, y+7, x-10, "  lastChangeCursor(%d, %d)  ", view->buf->lastChange->cursorPos.x, view->buf->lastChange->cursorPos.y);
+            mvwprintw(stdscr, y+8, x-10, "+-----------------+");
+
+            for(int i{}; i < view->buf->lastChange->linesAdded.size(); ++i){
+                mvwprintw(stdscr, y+8+i, x-10, " lineAdded(%s) ", view->buf->lastChange->linesAdded.at(i).c_str());
+            }
+            for(int i{}; i < view->buf->lastChange->linesRemoved.size(); ++i){
+                mvwprintw(stdscr, y+8+i+view->buf->lastChange->linesRemoved.size(), x-10, " lineRemoved(%s) ", view->buf->lastChange->linesRemoved.at(i).c_str());
+            }
+
             refresh();
             wrefresh(window);
 
         }
     }
-};
-
-enum Mode{
-    NORMAL, INSERT, VISUAL
 };
 
 struct Editor{
@@ -332,6 +308,9 @@ struct Editor{
 
     std::size_t activePane {0};
     Mode currMode {NORMAL};
+
+    std::vector<std::string> linesBeforeEditing {};
+    std::vector<int> lineEditRange {};
 
     std::size_t addBuffer(std::vector<std::string> lines, std::string filepath){
         buffers.push_back(std::make_unique<Buffer>(lines, filepath));
@@ -363,51 +342,146 @@ struct Editor{
     Pane& getCurrPane(){
         return panes.at(activePane);
     }
+
+    void renderCurrPane(){
+        getCurrPane().render();
+    }
+
+    Viewport* getCurrViewport(){
+        return getCurrPane().view;
+    }
+
+    Buffer* getCurrBuffer(){
+        return getCurrViewport()->buf;
+    }
+
+    // movement keybinds that i actually use
+    // DONE:
+    // hjkl
+    // TODO:
+    // w, e, b,
+    // state machine
+    // w look at curr cursor and keep going forward until not that type of char anymore
+    // w jumps to next beggining of word, e to next end of word, b to the prev beggining of word
+    // word delimiters: not (a-zA-Z, 0-9, _)
+    // WORD delimiters: only whitespace
+    // f, F with ; and ,
+    // / search does a regex search sooo
+    // $ end of line
+    // ^ beggining of text in line
+    //
+    // edit keybinds
+    // i, a, o, I, A, O
+    //
+    // paste buffer related keybinds
+    // yy - yank curr line
+    // nyy - yank n lines below
+    // 
+    //
+    // numbers to denote repeated commands
+    void handleNormalModeInput(int ch){
+        int movementAmnt {1};
+        if(ch == 'h')
+            getCurrViewport()->moveCursor({-movementAmnt, 0});
+        if(ch == 'j')
+            getCurrViewport()->moveCursor({0, movementAmnt});
+        if(ch == 'k')
+            getCurrViewport()->moveCursor({0, -movementAmnt});
+        if(ch == 'l')
+            getCurrViewport()->moveCursor({movementAmnt, 0});
+
+        if(ch == 'u'){
+            if(getCurrBuffer()->lastChange != getCurrBuffer()->rootChange){
+                getCurrBuffer()->undoChange(getCurrBuffer()->lastChange);
+                getCurrViewport()->setCursor(getCurrBuffer()->lastChange->cursorPos);
+
+                getCurrBuffer()->lastChange = getCurrBuffer()->lastChange->parent;
+            }
+        }
+
+        if(ch == CTRL('r')){
+            if(getCurrBuffer()->lastChange->children.size() > 0){
+                getCurrBuffer()->doChange(getCurrBuffer()->lastChange->children.back());
+                getCurrViewport()->setCursor(getCurrBuffer()->lastChange->children.back()->cursorPos);
+
+                getCurrBuffer()->lastChange = getCurrBuffer()->lastChange->children.back();
+            }
+        }
+
+        if(ch == 'i'){
+            currMode = INSERT;
+            linesBeforeEditing.clear();
+            lineEditRange.clear();
+            linesBeforeEditing.push_back(getCurrViewport()->getCurrentLine());
+            lineEditRange.push_back(getCurrViewport()->absolutePos.y);
+        }
+    }
+    void handleInsertModeInput(int ch){
+        if(ch == 27){
+            currMode = NORMAL;
+            getCurrViewport()->moveCursor({-1, 0});
+
+            auto range {std::minmax_element(lineEditRange.begin(), lineEditRange.end())};
+            auto begin {getCurrBuffer()->lines.begin()};
+
+            std::vector<std::string> newLines (begin + *range.first, begin + *range.second);
+            if(*range.second == *range.first){
+                newLines = {getCurrBuffer()->lines.at(*range.first)};
+            }
+
+            // commit changes
+            if(newLines != linesBeforeEditing){
+                getCurrBuffer()->addChange(getCurrViewport()->absolutePos, newLines, linesBeforeEditing);
+            }
+        }
+
+        if(ch >= 0 && ch <= 255 && std::isprint(ch)){
+            Vec2<int> pos {getCurrViewport()->absolutePos};
+            getCurrBuffer()->lines.at(pos.y).insert(pos.x, 1, ch);
+            getCurrViewport()->moveCursor({1, 0});
+        }
+
+        if(ch == KEY_BACKSPACE){
+            Vec2<int> pos {getCurrViewport()->absolutePos};
+            if(pos.x > 0){
+                getCurrBuffer()->lines.at(pos.y).erase(pos.x-1, 1);
+                getCurrViewport()->moveCursor({-1, 0});
+            }else if(pos.y > 0){
+                Buffer* buf {getCurrBuffer()};
+                linesBeforeEditing.insert(linesBeforeEditing.begin(), buf->lines.at(pos.y-1));
+
+                getCurrViewport()->moveCursor({static_cast<int>(buf->lines.at(pos.y-1).size() + 1) - pos.x, -1}, Mode::INSERT);
+                buf->lines.at(pos.y-1).insert(buf->lines.at(pos.y-1).size(), buf->lines.at(pos.y));
+                buf->lines.erase(buf->lines.begin()+pos.y);
+
+                lineEditRange.push_back(getCurrViewport()->absolutePos.y);
+            }
+        }
+
+    }
+    void handleVisualModeInput(int ch){
+    }
+    void handleInput(int ch){
+        switch(currMode){
+            case NORMAL:
+                handleNormalModeInput(ch);
+                break;
+            case INSERT:
+                handleInsertModeInput(ch);
+                break;
+            case VISUAL:
+                handleVisualModeInput(ch);
+                break;
+        }
+    }
 };
-
-/*
-void handleBufferInput(Window& win, int ch){
-    if(ch == 'h'){
-        if(win.cursorPos.x <= SCROLL_BUFFER_X && win.topLeft.x > 0){
-            --win.topLeft.x;
-        }else if(win.cursorPos.x > 0){
-            --win.cursorPos.x;
-        }
-    }
-
-    if(ch == 'k'){
-        if(win.cursorPos.y <= SCROLL_BUFFER_Y && win.topLeft.y > 0){
-            --win.topLeft.y;
-        }else if(win.cursorPos.y > 0){
-            --win.cursorPos.y;
-        }
-    }
-
-    if(ch == 'j'){
-        bool wantToScroll {win.cursorPos.y >= win.viewportSize.y - (1+SCROLL_BUFFER_Y)};
-        bool canScroll {win.topLeft.y + win.viewportSize.y < win.buf->lines.size()};
-        if(wantToScroll && canScroll){
-            ++win.topLeft.y;
-        }else if(win.cursorPos.y + win.topLeft.y < win.buf->lines.size() - 1){
-            ++win.cursorPos.y;
-        }
-    }
-
-    if(ch == 'l'){
-        if(win.cursorPos.x >= win.viewportSize.x - (1+SCROLL_BUFFER_X)){
-            ++win.topLeft.x;
-        }else{
-            ++win.cursorPos.x;
-        }
-    }
-}
-*/
 
 int main(int argc, char** argv){
     initscr();
     cbreak();
     noecho();
     keypad(stdscr, TRUE); // enable fn keys
+    set_escdelay(0);
 
     //start_color();
 
@@ -430,15 +504,8 @@ int main(int argc, char** argv){
 
     int ch;
     while((ch = getch()) != KEY_F(1)){
-        editor.getCurrPane().view->handleBufferInput(ch);
-        if(ch == 'e'){
-            editor.getCurrPane().setSize(editor.getCurrPane().getSize() + Vec2<int>{1, 1});
-        }
-        if(ch == 'q'){
-            editor.getCurrPane().setSize(editor.getCurrPane().getSize() - Vec2<int>{1, 1});
-        }
-
-        editor.getCurrPane().render();
+        editor.handleInput(ch);
+        editor.renderCurrPane();
     }
 
     endwin();
