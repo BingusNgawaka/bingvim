@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -11,6 +12,8 @@
 #include <vector>
 
 #define DEBUG true
+
+#define KEY_ESCAPE 27
 
 #define SCROLL_BUFFER_Y 8
 #define SCROLL_BUFFER_X 8
@@ -101,11 +104,43 @@ void write_file(std::vector<std::vector<char>> lines, std::string filepath){
 }
 */
 
-struct BufferChange{
-    Vec2<int> cursorPos;
+// split edit blocks (buffer change commits) into fundamental edits
+// insert char, delete char, split line, join line
+// then a commit is simply a set of ordered edits (can optimise delete char and insert char by combining contiguous edits of those type)
+// undo is do it in reverse
+struct Edit{
+    enum Type{
+        INSERT, DELETE, SPLIT, JOIN
+    };
 
-    std::vector<std::string> linesAdded;
-    std::vector<std::string> linesRemoved;
+    Type type;
+    Vec2<int> pos;
+    
+    std::string text;
+};
+
+std::string editTypeToStr(Edit& edit){
+    switch(edit.type){
+            case Edit::Type::INSERT:
+                return "INSERT(" + edit.text + ")";
+                break;
+            case Edit::Type::DELETE:
+                return "DELETE(" + edit.text + ")";
+                break;
+            case Edit::Type::JOIN:
+                return "JOIN(" + edit.text + ")";
+                break;
+            case Edit::Type::SPLIT:
+                return "SPLIT";
+                break;
+    }
+}
+
+struct BufferChange{
+    Vec2<int> startCursorPos;
+    Vec2<int> endCursorPos;
+
+    std::vector<Edit> edits;
 
     BufferChange* parent;
     std::vector<BufferChange*> children;
@@ -123,28 +158,80 @@ struct Buffer{
         lines(lines),
         filepath(filepath),
         modified(false),
-        rootChange(new BufferChange{{0, 0}, {}, {}, nullptr, {}}),
+        rootChange(new BufferChange{{0, 0}, {0,0}, {}, nullptr, {}}),
         lastChange(rootChange){}
 
-    void addChange(Vec2<int> cursorPos, std::vector<std::string> linesAdded, std::vector<std::string> linesRemoved){
-        BufferChange* change {new BufferChange{cursorPos, linesAdded, linesRemoved, lastChange, {}}};
+    void addChange(Vec2<int>& startCursorPos, Vec2<int>& endCursorPos, std::vector<Edit>& edits){
+        BufferChange* change {new BufferChange{startCursorPos, endCursorPos, edits, lastChange, {}}};
         lastChange->children.push_back(change);
         lastChange = change;
     }
 
-    void applyChange(Vec2<int>& pos, std::vector<std::string>& linesToAdd, std::size_t  numOfLinesToRemove){
-        auto begin {lines.begin()+pos.y};
-        if(numOfLinesToRemove > 0){
-            lines.erase(begin, begin+static_cast<int>(numOfLinesToRemove));
+    void undoEdit(Edit& edit){
+        // apply inverse operations
+        switch(edit.type){
+            case Edit::Type::INSERT:
+                lines.at(edit.pos.y).erase(edit.pos.x, edit.text.size());
+                break;
+            case Edit::Type::DELETE:
+                lines.at(static_cast<std::size_t>(edit.pos.y)).insert(static_cast<std::size_t>(edit.pos.x-1), edit.text);
+                break;
+            case Edit::Type::JOIN:
+                lines.insert(lines.begin()+edit.pos.y, edit.text);
+                lines.at(edit.pos.y-1).erase(lines.at(edit.pos.y-1).size() - edit.text.size());
+                break;
+            case Edit::Type::SPLIT:
+                std::string oldLine {lines.at(edit.pos.y+1)};
+                lines.at(edit.pos.y).append(oldLine);
+                lines.erase(lines.begin()+edit.pos.y+1);
+                break;
         }
-        lines.insert(begin, linesToAdd.begin(), linesToAdd.end());
     }
 
-    void doChange(BufferChange* change){
-        applyChange(change->cursorPos, change->linesAdded, change->linesRemoved.size());
+    void redoEdit(Edit& edit){
+        // reapply operations
+        switch(edit.type){
+            case Edit::Type::INSERT:
+                lines.at(static_cast<std::size_t>(edit.pos.y)).insert(static_cast<std::size_t>(edit.pos.x), edit.text);
+                break;
+            case Edit::Type::DELETE:
+                lines.at(edit.pos.y).erase(edit.pos.x-1, edit.text.size());
+                break;
+            case Edit::Type::JOIN:
+                lines.at(edit.pos.y-1).append(lines.at(edit.pos.y));
+                lines.erase(lines.begin()+edit.pos.y);
+                break;
+            case Edit::Type::SPLIT:
+                lines.insert(lines.begin()+edit.pos.y+1, lines.at(edit.pos.y).substr(edit.pos.x));
+                lines.at(edit.pos.y).erase(edit.pos.x);
+                break;
+        }
     }
-    void undoChange(BufferChange* change){
-        applyChange(change->cursorPos, change->linesRemoved, change->linesAdded.size());
+
+    Vec2<int> undoLastChange(){
+        if(lastChange != rootChange){
+            Vec2<int> returnCursor {lastChange->startCursorPos};
+            for(auto it{lastChange->edits.rbegin()}; it != lastChange->edits.rend(); ++it){
+                undoEdit(*it);
+            }
+            lastChange = lastChange->parent;
+            return returnCursor;
+        }
+
+        return {-1, -1};
+    }
+
+    Vec2<int> redoLastChange(){
+        if(lastChange->children.size() > 0){
+            lastChange = lastChange->children.back();
+            Vec2<int> returnCursor {lastChange->endCursorPos};
+            for(auto it{lastChange->edits.begin()}; it != lastChange->edits.end(); ++it){
+                redoEdit(*it);
+            }
+            return returnCursor;
+        }
+
+        return {-1, -1};
     }
 };
 
@@ -166,7 +253,7 @@ struct Viewport{
         size = newSize;
     }
 
-    std::string getCurrentLine(){
+    std::string getCurrLine(){
         return buf->lines.at(static_cast<std::size_t>(absolutePos.y));
     }
 
@@ -180,7 +267,7 @@ struct Viewport{
 
         absolutePos.y = std::clamp(absolutePos.y, 0, std::max(0, static_cast<int>(buf->lines.size())-1));
 
-        int furthestXOnCurrLine {static_cast<int>(getCurrentLine().size())};
+        int furthestXOnCurrLine {static_cast<int>(getCurrLine().size())};
         if(mode != Mode::INSERT) --furthestXOnCurrLine;
         furthestXOnCurrLine = std::max(0, furthestXOnCurrLine);
 
@@ -209,6 +296,7 @@ struct Viewport{
 
     void setCursor(Vec2<int> pos, Mode mode = Mode::NORMAL){
         moveCursor(pos - absolutePos, mode);
+        desiredCol = absolutePos.x;
     }
 
 };
@@ -244,7 +332,7 @@ struct Pane{
     }
 
     void setPos(Vec2<int> pos){
-        mvwin(window, pos.y, pos.y);
+        mvwin(window, pos.y, pos.x);
     }
 
     Vec2<int> getPos(){
@@ -257,46 +345,47 @@ struct Pane{
         wrefresh(window);
     }
 
+    void drawDebug(){
+            //TODO make this its own window itd be so much easier lol
+        int x = 100;
+        int y = 16;
+        mvwprintw(stdscr, y, x-10, "+------debug------+");
+        mvwprintw(stdscr, y+1, x-10, "  absPos(%d, %d)  ", view->absolutePos.x, view->absolutePos.y);
+        mvwprintw(stdscr, y+3, x-10, "  desiredCol(%d)  ", view->desiredCol);
+        mvwprintw(stdscr, y+4, x-10, "  scrollPos(%d, %d)  ", view->scrollPos.x, view->scrollPos.y);
+        mvwprintw(stdscr, y+5, x-10, "  linesize(%lu) ", view->getCurrLine().size());
+        mvwprintw(stdscr, y+6, x-10, "  ccc(%s) ", std::to_string(can_change_color()).c_str());
+        mvwprintw(stdscr, y+7, x-10, "  lastChangeEndCursor(%d, %d)  ", view->buf->lastChange->endCursorPos.x, view->buf->lastChange->endCursorPos.y);
+        mvwprintw(stdscr, y+8, x-10, "  lastChangeBeginCursor(%d, %d)  ", view->buf->lastChange->startCursorPos.x, view->buf->lastChange->startCursorPos.y);
+
+        for(int i{}; i < view->buf->lastChange->edits.size(); ++i){
+            mvwprintw(stdscr, y+9+i, x-10, "  Edit%d: (%s)  ", i, editTypeToStr(view->buf->lastChange->edits.at(i)).c_str());
+        }
+
+        refresh();
+        wrefresh(window);
+    }
+
     void render(){
         int maximumVisibleRowCount {std::min(view->size.y, static_cast<int>(view->buf->lines.size()) - (view->scrollPos.y))};
-        for(int row{}; row < view->size.y; ++row){
-            wmove(window, static_cast<int>(row), 0);
-            wclrtoeol(window);
-        }
         for(int row{}; row < maximumVisibleRowCount; ++row){
             std::string line {view->buf->lines.at(static_cast<std::size_t>(row+view->scrollPos.y))};
             wmove(window, static_cast<int>(row), 0);
+            wclrtoeol(window);
             if(static_cast<std::size_t>(view->scrollPos.x) < line.size()){
                 line = line.substr(static_cast<std::size_t>(view->scrollPos.x));
                 wprintw(window, "%s", line.c_str());
             }
         }
+        for(int row{maximumVisibleRowCount}; row < view->size.y; ++row){
+            wmove(window, static_cast<int>(row), 0);
+            wclrtoeol(window);
+        }
 
         moveCursorToViewPos();
 
         if(DEBUG){
-            //TODO make this its own window itd be so much easier lol
-            int x = 100;
-            int y = 16;
-            mvwprintw(stdscr, y, x-10, "+------debug------+");
-            mvwprintw(stdscr, y+1, x-10, "  absPos(%d, %d)  ", view->absolutePos.x, view->absolutePos.y);
-            mvwprintw(stdscr, y+3, x-10, "  desiredCol(%d)  ", view->desiredCol);
-            mvwprintw(stdscr, y+4, x-10, "  scrollPos(%d, %d)  ", view->scrollPos.x, view->scrollPos.y);
-            mvwprintw(stdscr, y+5, x-10, "  linesize(%lu) ", view->getCurrentLine().size());
-            mvwprintw(stdscr, y+6, x-10, "  ccc(%s) ", std::to_string(can_change_color()).c_str());
-            mvwprintw(stdscr, y+7, x-10, "  lastChangeCursor(%d, %d)  ", view->buf->lastChange->cursorPos.x, view->buf->lastChange->cursorPos.y);
-            mvwprintw(stdscr, y+8, x-10, "+-----------------+");
-
-            for(int i{}; i < view->buf->lastChange->linesAdded.size(); ++i){
-                mvwprintw(stdscr, y+8+i, x-10, " lineAdded(%s) ", view->buf->lastChange->linesAdded.at(i).c_str());
-            }
-            for(int i{}; i < view->buf->lastChange->linesRemoved.size(); ++i){
-                mvwprintw(stdscr, y+8+i+view->buf->lastChange->linesRemoved.size(), x-10, " lineRemoved(%s) ", view->buf->lastChange->linesRemoved.at(i).c_str());
-            }
-
-            refresh();
-            wrefresh(window);
-
+            drawDebug();
         }
     }
 };
@@ -309,8 +398,8 @@ struct Editor{
     std::size_t activePane {0};
     Mode currMode {NORMAL};
 
-    std::vector<std::string> linesBeforeEditing {};
-    std::vector<int> lineEditRange {};
+    Vec2<int> firstCursorPos {};
+    std::vector<Edit> stagedEdits {};
 
     std::size_t addBuffer(std::vector<std::string> lines, std::string filepath){
         buffers.push_back(std::make_unique<Buffer>(lines, filepath));
@@ -345,6 +434,7 @@ struct Editor{
 
     void renderCurrPane(){
         getCurrPane().render();
+
     }
 
     Viewport* getCurrViewport(){
@@ -353,6 +443,59 @@ struct Editor{
 
     Buffer* getCurrBuffer(){
         return getCurrViewport()->buf;
+    }
+
+    void startChange(){
+        stagedEdits.clear();
+        firstCursorPos = getCurrViewport()->absolutePos;
+    }
+    void commitChange(){
+        getCurrBuffer()->addChange(firstCursorPos, getCurrViewport()->absolutePos, stagedEdits);
+    }
+
+    void handleBackspaceLogic(){
+        Vec2<int> pos {getCurrViewport()->absolutePos};
+        Buffer* buf {getCurrBuffer()};
+        
+        if(pos.x > 0){
+            stagedEdits.push_back({
+                    Edit::Type::DELETE,
+                    pos,
+                    std::string(1, buf->lines.at(pos.y).at(pos.x-1))
+            });
+
+            buf->lines.at(pos.y).erase(pos.x-1, 1);
+            getCurrViewport()->moveCursor({-1, 0});
+
+        }else if(pos.y > 0){
+            std::string oldLine {buf->lines.at(pos.y)};
+            stagedEdits.push_back({
+                    Edit::Type::JOIN,
+                    pos,
+                    oldLine
+            });
+
+            getCurrViewport()->setCursor({static_cast<int>(buf->lines.at(pos.y-1).size()+1), pos.y-1}, Mode::INSERT);
+
+            buf->lines.at(pos.y-1).append(oldLine);
+            buf->lines.erase(buf->lines.begin()+pos.y);
+        }
+    }
+
+    void handleEnterLogic(){
+        Vec2<int> pos {getCurrViewport()->absolutePos};
+        Buffer* buf {getCurrBuffer()};
+
+        stagedEdits.push_back({
+                Edit::Type::SPLIT,
+                pos
+        });
+
+        std::string rightSideOfNewString {buf->lines.at(pos.y).substr(pos.x)};
+        buf->lines.at(pos.y).erase(pos.x);
+        buf->lines.insert(buf->lines.begin()+pos.y+1, rightSideOfNewString);
+
+        getCurrViewport()->setCursor({0, pos.y+1});
     }
 
     // movement keybinds that i actually use
@@ -391,73 +534,49 @@ struct Editor{
             getCurrViewport()->moveCursor({movementAmnt, 0});
 
         if(ch == 'u'){
-            if(getCurrBuffer()->lastChange != getCurrBuffer()->rootChange){
-                getCurrBuffer()->undoChange(getCurrBuffer()->lastChange);
-                getCurrViewport()->setCursor(getCurrBuffer()->lastChange->cursorPos);
-
-                getCurrBuffer()->lastChange = getCurrBuffer()->lastChange->parent;
-            }
+            Vec2<int> undoVec {getCurrBuffer()->undoLastChange()};
+            if(undoVec != Vec2<int>{-1, -1})
+                getCurrViewport()->setCursor(undoVec);
         }
 
         if(ch == CTRL('r')){
-            if(getCurrBuffer()->lastChange->children.size() > 0){
-                getCurrBuffer()->doChange(getCurrBuffer()->lastChange->children.back());
-                getCurrViewport()->setCursor(getCurrBuffer()->lastChange->children.back()->cursorPos);
-
-                getCurrBuffer()->lastChange = getCurrBuffer()->lastChange->children.back();
-            }
+            Vec2<int> redoVec {getCurrBuffer()->redoLastChange()};
+            if(redoVec != Vec2<int>{-1, -1})
+                getCurrViewport()->setCursor(redoVec);
         }
 
         if(ch == 'i'){
             currMode = INSERT;
-            linesBeforeEditing.clear();
-            lineEditRange.clear();
-            linesBeforeEditing.push_back(getCurrViewport()->getCurrentLine());
-            lineEditRange.push_back(getCurrViewport()->absolutePos.y);
+            startChange();
         }
     }
     void handleInsertModeInput(int ch){
-        if(ch == 27){
-            currMode = NORMAL;
-            getCurrViewport()->moveCursor({-1, 0});
-
-            auto range {std::minmax_element(lineEditRange.begin(), lineEditRange.end())};
-            auto begin {getCurrBuffer()->lines.begin()};
-
-            std::vector<std::string> newLines (begin + *range.first, begin + *range.second);
-            if(*range.second == *range.first){
-                newLines = {getCurrBuffer()->lines.at(*range.first)};
-            }
-
-            // commit changes
-            if(newLines != linesBeforeEditing){
-                getCurrBuffer()->addChange(getCurrViewport()->absolutePos, newLines, linesBeforeEditing);
-            }
-        }
-
         if(ch >= 0 && ch <= 255 && std::isprint(ch)){
             Vec2<int> pos {getCurrViewport()->absolutePos};
-            getCurrBuffer()->lines.at(pos.y).insert(pos.x, 1, ch);
-            getCurrViewport()->moveCursor({1, 0});
+            getCurrBuffer()->lines.at(static_cast<std::size_t>(pos.y)).insert(static_cast<std::size_t>(pos.x), 1, static_cast<char>(ch));
+
+            stagedEdits.push_back({
+                    Edit::Type::INSERT,
+                    pos,
+                    std::string(1, ch)
+            });
+
+            getCurrViewport()->moveCursor({1, 0}, Mode::INSERT);
+        }
+
+        if(ch == KEY_ESCAPE){
+            currMode = NORMAL;
+            getCurrViewport()->moveCursor({-1, 0});
+            commitChange();
         }
 
         if(ch == KEY_BACKSPACE){
-            Vec2<int> pos {getCurrViewport()->absolutePos};
-            if(pos.x > 0){
-                getCurrBuffer()->lines.at(pos.y).erase(pos.x-1, 1);
-                getCurrViewport()->moveCursor({-1, 0});
-            }else if(pos.y > 0){
-                Buffer* buf {getCurrBuffer()};
-                linesBeforeEditing.insert(linesBeforeEditing.begin(), buf->lines.at(pos.y-1));
-
-                getCurrViewport()->moveCursor({static_cast<int>(buf->lines.at(pos.y-1).size() + 1) - pos.x, -1}, Mode::INSERT);
-                buf->lines.at(pos.y-1).insert(buf->lines.at(pos.y-1).size(), buf->lines.at(pos.y));
-                buf->lines.erase(buf->lines.begin()+pos.y);
-
-                lineEditRange.push_back(getCurrViewport()->absolutePos.y);
-            }
+            handleBackspaceLogic();
         }
 
+        if(ch == 10){ // ENTER
+            handleEnterLogic();
+        }
     }
     void handleVisualModeInput(int ch){
     }
