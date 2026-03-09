@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cctype>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -13,12 +12,15 @@
 
 #define DEBUG true
 
+#define tabSize 4
+
 #define KEY_ESCAPE 27
 
 #define SCROLL_BUFFER_Y 8
 #define SCROLL_BUFFER_X 8
 
 #define CTRL(x) ((x) & 0x1f)
+#define SHIFT(x) (x - 32)
 
 enum Mode{
     NORMAL, INSERT, VISUAL
@@ -89,6 +91,21 @@ Vec2<int> getTerminalSize(){
     return {terminalW, terminalH};
 }
 
+int countIndentation(std::string& str){
+    int count {};
+    for(char c : str){
+        if(c == ' ')
+            ++count;
+        else
+            break;
+    }
+
+    int diff {count % tabSize};
+    if(diff == 0)
+        return count;
+    
+    return count + (tabSize - diff);
+}
 /*
 void write_file(std::vector<std::vector<char>> lines, std::string filepath){
     std::ofstream file(filepath, std::ios::trunc);
@@ -174,15 +191,14 @@ struct Buffer{
                 lines.at(edit.pos.y).erase(edit.pos.x, edit.text.size());
                 break;
             case Edit::Type::DELETE:
-                lines.at(static_cast<std::size_t>(edit.pos.y)).insert(static_cast<std::size_t>(edit.pos.x-1), edit.text);
+                lines.at(static_cast<std::size_t>(edit.pos.y)).insert(static_cast<std::size_t>(edit.pos.x-edit.text.size()), edit.text);
                 break;
             case Edit::Type::JOIN:
                 lines.insert(lines.begin()+edit.pos.y, edit.text);
                 lines.at(edit.pos.y-1).erase(lines.at(edit.pos.y-1).size() - edit.text.size());
                 break;
             case Edit::Type::SPLIT:
-                std::string oldLine {lines.at(edit.pos.y+1)};
-                lines.at(edit.pos.y).append(oldLine);
+                lines.at(edit.pos.y).append(edit.text);
                 lines.erase(lines.begin()+edit.pos.y+1);
                 break;
         }
@@ -202,8 +218,22 @@ struct Buffer{
                 lines.erase(lines.begin()+edit.pos.y);
                 break;
             case Edit::Type::SPLIT:
-                lines.insert(lines.begin()+edit.pos.y+1, lines.at(edit.pos.y).substr(edit.pos.x));
+                int currIndent {countIndentation(lines.at(edit.pos.y))};
+                int newIndent {};
+                std::string rightSideOfLine {lines.at(edit.pos.y).substr(edit.pos.x)};
+
+                if(lines.at(edit.pos.y).back() == '{')
+                    newIndent = currIndent + tabSize;
+                else if(lines.at(edit.pos.y).back() == '}')
+                    newIndent = currIndent - tabSize;
+                else;
+                    newIndent = currIndent;
+
+                std::string indentation (newIndent, ' ');
+
+                std::string newString {indentation.append(rightSideOfLine)};
                 lines.at(edit.pos.y).erase(edit.pos.x);
+                lines.insert(lines.begin()+edit.pos.y+1, newString);
                 break;
         }
     }
@@ -450,6 +480,9 @@ struct Editor{
         firstCursorPos = getCurrViewport()->absolutePos;
     }
     void commitChange(){
+        // TODO optimize edits
+        // collapse adjacent inserts and cancel adjacent identical inserts and deletes
+        // cancel adjacent splits and joins as well
         getCurrBuffer()->addChange(firstCursorPos, getCurrViewport()->absolutePos, stagedEdits);
     }
 
@@ -458,14 +491,29 @@ struct Editor{
         Buffer* buf {getCurrBuffer()};
         
         if(pos.x > 0){
+
+            int delCount {1};
+            int ind {};
+            for(auto it {buf->lines.at(pos.y).begin() + pos.x-1}; it != buf->lines.at(pos.y).begin(); --it){
+                ind++;
+                if(*it == ' ' && (pos.x-ind) % tabSize != 0){
+                    ++delCount;
+                }else{
+                    if(*it != ' ' && ind > 1)
+                        --delCount;
+                    break;
+                }
+            }
+            std::string deletedStr {buf->lines.at(pos.y).substr(pos.x-delCount, delCount)};
+
             stagedEdits.push_back({
                     Edit::Type::DELETE,
                     pos,
-                    std::string(1, buf->lines.at(pos.y).at(pos.x-1))
+                    deletedStr
             });
 
-            buf->lines.at(pos.y).erase(pos.x-1, 1);
-            getCurrViewport()->moveCursor({-1, 0});
+            buf->lines.at(pos.y).erase(pos.x-delCount, delCount);
+            getCurrViewport()->moveCursor({-delCount, 0}, Mode::INSERT);
 
         }else if(pos.y > 0){
             std::string oldLine {buf->lines.at(pos.y)};
@@ -486,16 +534,30 @@ struct Editor{
         Vec2<int> pos {getCurrViewport()->absolutePos};
         Buffer* buf {getCurrBuffer()};
 
+        std::string rightSideOfLine {buf->lines.at(pos.y).substr(pos.x)};
         stagedEdits.push_back({
                 Edit::Type::SPLIT,
-                pos
+                pos,
+                rightSideOfLine
         });
 
-        std::string rightSideOfNewString {buf->lines.at(pos.y).substr(pos.x)};
-        buf->lines.at(pos.y).erase(pos.x);
-        buf->lines.insert(buf->lines.begin()+pos.y+1, rightSideOfNewString);
+        int currIndent {countIndentation(buf->lines.at(pos.y))};
+        int newIndent {};
 
-        getCurrViewport()->setCursor({0, pos.y+1});
+        if(buf->lines.at(pos.y).back() == '{')
+            newIndent = currIndent + tabSize;
+        else if(buf->lines.at(pos.y).back() == '}')
+            newIndent = currIndent - tabSize;
+        else;
+            newIndent = currIndent;
+
+        std::string indentation (newIndent, ' ');
+
+        std::string newString {indentation.append(rightSideOfLine)};
+        buf->lines.at(pos.y).erase(pos.x);
+        buf->lines.insert(buf->lines.begin()+pos.y+1, newString);
+
+        getCurrViewport()->setCursor({newIndent, pos.y+1}, Mode::INSERT);
     }
 
     // movement keybinds that i actually use
@@ -546,8 +608,20 @@ struct Editor{
         }
 
         if(ch == 'i'){
-            currMode = INSERT;
+            currMode = Mode::INSERT;
             startChange();
+        }
+
+        if(ch == 'a'){
+            currMode = Mode::INSERT;
+            startChange();
+            getCurrViewport()->moveCursor({1, 0}, currMode);
+        }
+
+        if(ch == 'A'){
+            currMode = Mode::INSERT;
+            startChange();
+            getCurrViewport()->setCursor({static_cast<int>(getCurrViewport()->getCurrLine().size()+1), getCurrViewport()->absolutePos.y}, currMode);
         }
     }
     void handleInsertModeInput(int ch){
@@ -562,6 +636,21 @@ struct Editor{
             });
 
             getCurrViewport()->moveCursor({1, 0}, Mode::INSERT);
+        }
+
+        if(ch == '\t'){
+            Vec2<int> pos {getCurrViewport()->absolutePos};
+            int indentDiff {tabSize - pos.x % tabSize};
+            std::string addedText(indentDiff, ' ');
+            getCurrBuffer()->lines.at(static_cast<std::size_t>(pos.y)).insert(static_cast<std::size_t>(pos.x), addedText);
+
+            stagedEdits.push_back({
+                    Edit::Type::INSERT,
+                    pos,
+                    addedText
+            });
+
+            getCurrViewport()->moveCursor({static_cast<int>(addedText.size()), 0}, Mode::INSERT);
         }
 
         if(ch == KEY_ESCAPE){
