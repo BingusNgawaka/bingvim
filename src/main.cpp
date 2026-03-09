@@ -151,6 +151,8 @@ std::string editTypeToStr(Edit& edit){
                 return "SPLIT";
                 break;
     }
+
+    return "none";
 }
 
 struct BufferChange{
@@ -185,54 +187,56 @@ struct Buffer{
     }
 
     void undoEdit(Edit& edit){
+        Vec2<std::size_t> castedPos {static_cast<std::size_t>(edit.pos.x), static_cast<std::size_t>(edit.pos.y)};
         // apply inverse operations
         switch(edit.type){
             case Edit::Type::INSERT:
-                lines.at(edit.pos.y).erase(edit.pos.x, edit.text.size());
+                lines.at(castedPos.y).erase(castedPos.x, edit.text.size());
                 break;
             case Edit::Type::DELETE:
-                lines.at(static_cast<std::size_t>(edit.pos.y)).insert(static_cast<std::size_t>(edit.pos.x-edit.text.size()), edit.text);
+                lines.at(castedPos.y).insert(castedPos.x, edit.text);
                 break;
             case Edit::Type::JOIN:
                 lines.insert(lines.begin()+edit.pos.y, edit.text);
-                lines.at(edit.pos.y-1).erase(lines.at(edit.pos.y-1).size() - edit.text.size());
+                lines.at(castedPos.y-1).erase(lines.at(castedPos.y-1).size() - edit.text.size());
                 break;
             case Edit::Type::SPLIT:
-                lines.at(edit.pos.y).append(edit.text);
+                lines.at(castedPos.y).append(edit.text);
                 lines.erase(lines.begin()+edit.pos.y+1);
                 break;
         }
     }
 
     void redoEdit(Edit& edit){
+        Vec2<std::size_t> castedPos {static_cast<std::size_t>(edit.pos.x), static_cast<std::size_t>(edit.pos.y)};
         // reapply operations
         switch(edit.type){
             case Edit::Type::INSERT:
-                lines.at(static_cast<std::size_t>(edit.pos.y)).insert(static_cast<std::size_t>(edit.pos.x), edit.text);
+                lines.at(castedPos.y).insert(castedPos.x, edit.text);
                 break;
             case Edit::Type::DELETE:
-                lines.at(edit.pos.y).erase(edit.pos.x-1, edit.text.size());
+                lines.at(castedPos.y).erase(castedPos.x-1, edit.text.size());
                 break;
             case Edit::Type::JOIN:
-                lines.at(edit.pos.y-1).append(lines.at(edit.pos.y));
+                lines.at(castedPos.y-1).append(lines.at(castedPos.y));
                 lines.erase(lines.begin()+edit.pos.y);
                 break;
             case Edit::Type::SPLIT:
-                int currIndent {countIndentation(lines.at(edit.pos.y))};
+                int currIndent {countIndentation(lines.at(castedPos.y))};
                 int newIndent {};
-                std::string rightSideOfLine {lines.at(edit.pos.y).substr(edit.pos.x)};
+                std::string rightSideOfLine {lines.at(castedPos.y).substr(castedPos.x)};
 
-                if(lines.at(edit.pos.y).back() == '{')
+                if(lines.at(castedPos.y).back() == '{')
                     newIndent = currIndent + tabSize;
-                else if(lines.at(edit.pos.y).back() == '}')
+                else if(lines.at(castedPos.y).back() == '}')
                     newIndent = currIndent - tabSize;
-                else;
+                else
                     newIndent = currIndent;
 
-                std::string indentation (newIndent, ' ');
+                std::string indentation (static_cast<std::size_t>(newIndent), ' ');
 
                 std::string newString {indentation.append(rightSideOfLine)};
-                lines.at(edit.pos.y).erase(edit.pos.x);
+                lines.at(castedPos.y).erase(castedPos.x);
                 lines.insert(lines.begin()+edit.pos.y+1, newString);
                 break;
         }
@@ -376,7 +380,8 @@ struct Pane{
     }
 
     void drawDebug(){
-            //TODO make this its own window itd be so much easier lol
+        //TODO make this its own window itd be so much easier lol
+        /*
         int x = 100;
         int y = 16;
         mvwprintw(stdscr, y, x-10, "+------debug------+");
@@ -394,6 +399,7 @@ struct Pane{
 
         refresh();
         wrefresh(window);
+        */
     }
 
     void render(){
@@ -488,13 +494,14 @@ struct Editor{
 
     void handleBackspaceLogic(){
         Vec2<int> pos {getCurrViewport()->absolutePos};
+        Vec2<std::size_t> castedPos {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
         Buffer* buf {getCurrBuffer()};
         
         if(pos.x > 0){
 
-            int delCount {1};
+            std::size_t delCount {1};
             int ind {};
-            for(auto it {buf->lines.at(pos.y).begin() + pos.x-1}; it != buf->lines.at(pos.y).begin(); --it){
+            for(auto it {buf->lines.at(castedPos.y).begin() + pos.x-1}; it != buf->lines.at(castedPos.y).begin(); --it){
                 ind++;
                 if(*it == ' ' && (pos.x-ind) % tabSize != 0){
                     ++delCount;
@@ -504,7 +511,7 @@ struct Editor{
                     break;
                 }
             }
-            std::string deletedStr {buf->lines.at(pos.y).substr(pos.x-delCount, delCount)};
+            std::string deletedStr {buf->lines.at(castedPos.y).substr(castedPos.x-delCount, delCount)};
 
             stagedEdits.push_back({
                     Edit::Type::DELETE,
@@ -512,49 +519,50 @@ struct Editor{
                     deletedStr
             });
 
-            buf->lines.at(pos.y).erase(pos.x-delCount, delCount);
-            getCurrViewport()->moveCursor({-delCount, 0}, Mode::INSERT);
+            buf->lines.at(castedPos.y).erase(castedPos.x-delCount, delCount);
+            getCurrViewport()->moveCursor({-static_cast<int>(delCount), 0}, Mode::INSERT);
 
         }else if(pos.y > 0){
-            std::string oldLine {buf->lines.at(pos.y)};
+            std::string oldLine {buf->lines.at(castedPos.y)};
             stagedEdits.push_back({
                     Edit::Type::JOIN,
                     pos,
                     oldLine
             });
 
-            getCurrViewport()->setCursor({static_cast<int>(buf->lines.at(pos.y-1).size()+1), pos.y-1}, Mode::INSERT);
+            getCurrViewport()->setCursor({static_cast<int>(buf->lines.at(castedPos.y-1).size()+1), pos.y-1}, Mode::INSERT);
 
-            buf->lines.at(pos.y-1).append(oldLine);
+            buf->lines.at(castedPos.y-1).append(oldLine);
             buf->lines.erase(buf->lines.begin()+pos.y);
         }
     }
 
     void handleEnterLogic(){
         Vec2<int> pos {getCurrViewport()->absolutePos};
+        Vec2<std::size_t> castedPos {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
         Buffer* buf {getCurrBuffer()};
 
-        std::string rightSideOfLine {buf->lines.at(pos.y).substr(pos.x)};
+        std::string rightSideOfLine {buf->lines.at(castedPos.y).substr(castedPos.x)};
         stagedEdits.push_back({
                 Edit::Type::SPLIT,
                 pos,
                 rightSideOfLine
         });
 
-        int currIndent {countIndentation(buf->lines.at(pos.y))};
+        int currIndent {countIndentation(buf->lines.at(castedPos.y))};
         int newIndent {};
 
-        if(buf->lines.at(pos.y).back() == '{')
+        if(buf->lines.at(castedPos.y).back() == '{')
             newIndent = currIndent + tabSize;
-        else if(buf->lines.at(pos.y).back() == '}')
+        else if(buf->lines.at(castedPos.y).back() == '}')
             newIndent = currIndent - tabSize;
-        else;
+        else
             newIndent = currIndent;
 
-        std::string indentation (newIndent, ' ');
+        std::string indentation (static_cast<std::size_t>(newIndent), ' ');
 
         std::string newString {indentation.append(rightSideOfLine)};
-        buf->lines.at(pos.y).erase(pos.x);
+        buf->lines.at(castedPos.y).erase(castedPos.x);
         buf->lines.insert(buf->lines.begin()+pos.y+1, newString);
 
         getCurrViewport()->setCursor({newIndent, pos.y+1}, Mode::INSERT);
@@ -632,7 +640,7 @@ struct Editor{
             stagedEdits.push_back({
                     Edit::Type::INSERT,
                     pos,
-                    std::string(1, ch)
+                    std::string(1, static_cast<char>(ch))
             });
 
             getCurrViewport()->moveCursor({1, 0}, Mode::INSERT);
@@ -641,7 +649,7 @@ struct Editor{
         if(ch == '\t'){
             Vec2<int> pos {getCurrViewport()->absolutePos};
             int indentDiff {tabSize - pos.x % tabSize};
-            std::string addedText(indentDiff, ' ');
+            std::string addedText(static_cast<std::size_t>(indentDiff), ' ');
             getCurrBuffer()->lines.at(static_cast<std::size_t>(pos.y)).insert(static_cast<std::size_t>(pos.x), addedText);
 
             stagedEdits.push_back({
