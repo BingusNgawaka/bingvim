@@ -6,8 +6,10 @@
 #include <fstream>
 #include <memory>
 #include <ncurses.h>
+#include <regex>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #define DEBUG true
@@ -15,6 +17,15 @@
 #define tabSize 4
 
 #define KEY_ESCAPE 27
+
+#define KEYWORD_COLORPAIR 2
+#define STRING_COLORPAIR 3
+#define NUMBER_COLORPAIR 4
+#define COMMENT_COLORPAIR 5
+#define FUNCTION_COLORPAIR 6
+#define VARIABLE_COLORPAIR 7
+
+#define BG_COLOR 235
 
 #define SCROLL_BUFFER_Y 8
 #define SCROLL_BUFFER_X 8
@@ -24,6 +35,10 @@
 
 enum Mode{
     NORMAL, INSERT, VISUAL
+};
+
+enum SyntaxGroup{
+    KEYWORD, STRING, COMMENT, NUMBER, FUNCTION, VARIABLE
 };
 
 template <typename T>
@@ -276,6 +291,9 @@ struct Viewport{
     Vec2<int> size;
     int desiredCol;
 
+    std::vector<int> buffLinesChanged {};
+
+
     Viewport(Buffer* buf):
         buf(buf),
         absolutePos({0,0}),
@@ -314,7 +332,6 @@ struct Viewport{
             absolutePos.x = std::min(desiredCol, furthestXOnCurrLine);
         }
 
-
         if(absolutePos.y < scrollPos.y + SCROLL_BUFFER_Y){
             scrollPos.y = std::max(0, absolutePos.y - SCROLL_BUFFER_Y);
         }else if (absolutePos.y >= scrollPos.y + size.y - SCROLL_BUFFER_Y) {
@@ -325,7 +342,6 @@ struct Viewport{
         }else if (absolutePos.x >= scrollPos.x + size.x - SCROLL_BUFFER_X) {
             scrollPos.x = absolutePos.x - (size.x - 1) + SCROLL_BUFFER_X;
         }
-
     }
 
     void setCursor(Vec2<int> pos, Mode mode = Mode::NORMAL){
@@ -350,6 +366,9 @@ struct Color{
 struct Pane{
     Viewport* view;
     WINDOW* window;
+
+    // maps pos.y, pos.x -> colorpair index
+    std::unordered_map<int, std::unordered_map<int, SyntaxGroup>> colorMap {};
 
     Pane(Viewport* view, WINDOW* window):
         view(view), window(window){}
@@ -379,6 +398,41 @@ struct Pane{
         wrefresh(window);
     }
 
+    void checkAndSetRegexAgainstLine(std::size_t row, std::regex reg, SyntaxGroup group){
+        std::string line {view->buf->lines.at(row)};
+
+        std::sregex_iterator end;
+        for(std::sregex_iterator it(line.begin(), line.end(), reg); it != end; ++it){
+            auto match = *it;
+            std::size_t start {static_cast<std::size_t>(match.position())};
+            std::size_t len {static_cast<std::size_t>(match.length())};
+
+            if(group == FUNCTION || group == VARIABLE) --len;
+            if(group == VARIABLE) ++start;
+
+            for(std::size_t i{start}; i < start+len; ++i){
+                colorMap[row][i] = group;
+            }
+        }
+    }
+
+    /*
+    void checkAndSetRegexOnAllLines(){
+        std::regex keywordRegex("\\b(and|bool|bitor|bitand|break|case|catch|char|char16_t|char32_t|class|concept|const|constexpr|continue|default|delete|do|double|static_cast|else|enum|export|false|float|for|friend|if|goto|import|inline|int|long|module|namespace|new|not|nullptr|operator|or|private|protected|public|register|return|short|signed|sizeof|static|static_cast|struct|switch|template|this|throw|true|try|typedef|typeid|union|unsigned|using|virtual|void|volatile|while|xor|#include|#define)\\b"); // matches keywords TODO turn into a vector to easily add more this is terrible lol
+        std::regex numberRegex("(?:\\d+\\.\\d+f|\\d+\\.\\d+|\\d+|\\.\\d+f*)"); // matches nums // todo fix it so decimals are good and floats
+        std::regex stringRegex("[\"].*?[\">]"); // matches string and <>
+        std::regex commentRegex("//.*"); // matches singleline comments
+
+        colorMap.clear();
+        for(std::size_t row{}; row < view->buf->lines.size(); ++row){
+            checkAndSetRegexAgainstLine(row, numberRegex, SyntaxGroup::NUMBER);
+            checkAndSetRegexAgainstLine(row, keywordRegex, SyntaxGroup::KEYWORD);
+            checkAndSetRegexAgainstLine(row, stringRegex, SyntaxGroup::STRING);
+            checkAndSetRegexAgainstLine(row, commentRegex, SyntaxGroup::COMMENT);
+        }
+    }
+    */
+
     void drawDebug(){
         //TODO make this its own window itd be so much easier lol
         /*
@@ -399,18 +453,71 @@ struct Pane{
 
         refresh();
         wrefresh(window);
+
+
         */
     }
 
+    // returns color pair index for a given char pos
+    int getColorGroup(Vec2<int> pos){
+        if(colorMap.contains(pos.y) && colorMap[pos.y].contains(pos.x)){
+            switch(colorMap[pos.y][pos.x]){
+                case SyntaxGroup::KEYWORD:
+                    return KEYWORD_COLORPAIR;
+                    break;
+                case SyntaxGroup::STRING:
+                    return STRING_COLORPAIR;
+                    break;
+                case SyntaxGroup::NUMBER:
+                    return NUMBER_COLORPAIR;
+                    break;
+                case SyntaxGroup::COMMENT:
+                    return COMMENT_COLORPAIR;
+                    break;
+                case SyntaxGroup::FUNCTION:
+                    return FUNCTION_COLORPAIR;
+                    break;
+                case SyntaxGroup::VARIABLE:
+                    return VARIABLE_COLORPAIR;
+                    break;
+            }
+        }
+
+        return 1;
+    }
+
     void render(){
+        wbkgd(window, COLOR_PAIR(1));
+
         int maximumVisibleRowCount {std::min(view->size.y, static_cast<int>(view->buf->lines.size()) - (view->scrollPos.y))};
+        std::regex keywordRegex("(\\b(and|bool|bitor|bitand|break|case|catch|char|char16_t|char32_t|class|concept|const|constexpr|continue|default|delete|do|double|static_cast|else|enum|export|false|float|for|friend|if|goto|import|inline|int|long|module|namespace|new|not|nullptr|operator|or|private|protected|public|register|return|short|signed|sizeof|static|static_cast|struct|switch|template|this|throw|true|try|typedef|typeid|union|unsigned|using|virtual|void|volatile|while|xor)\\b)|((\\#define|\\#include)\\b)"); // matches keywords TODO turn into a vector to easily add more this is terrible lol
+        std::regex numberRegex("\\b(?:\\d+\\.\\d+f|\\d+\\.\\d+|\\d+|\\.\\d+f*)\\b"); // matches nums
+        std::regex stringRegex("[\"<].*?[\">]"); // matches string and <>
+        std::regex funcRegex("\\b([A-Za-z_]\\w*)\\s*\\(");
+        std::regex varRegex("\\.([A-Za-z_]\\w*)");
+        std::regex commentRegex("//.*"); // matches singleline comments
+
         for(int row{}; row < maximumVisibleRowCount; ++row){
             std::string line {view->buf->lines.at(static_cast<std::size_t>(row+view->scrollPos.y))};
             wmove(window, static_cast<int>(row), 0);
             wclrtoeol(window);
             if(static_cast<std::size_t>(view->scrollPos.x) < line.size()){
                 line = line.substr(static_cast<std::size_t>(view->scrollPos.x));
-                wprintw(window, "%s", line.c_str());
+                //
+                int absRow {row + view->scrollPos.y};
+                checkAndSetRegexAgainstLine(absRow, numberRegex, SyntaxGroup::NUMBER);
+                checkAndSetRegexAgainstLine(absRow, varRegex, SyntaxGroup::VARIABLE);
+                checkAndSetRegexAgainstLine(absRow, keywordRegex, SyntaxGroup::KEYWORD);
+                checkAndSetRegexAgainstLine(absRow, funcRegex, SyntaxGroup::FUNCTION);
+                checkAndSetRegexAgainstLine(absRow, stringRegex, SyntaxGroup::STRING);
+                checkAndSetRegexAgainstLine(absRow, commentRegex, SyntaxGroup::COMMENT);
+                //
+
+                for(Vec2<int> pos{0, row}; pos.x < line.size(); ++pos.x){
+                    wattron(window, COLOR_PAIR(getColorGroup(pos+view->scrollPos)));
+                    mvwprintw(window, pos.y, pos.x , "%c", line.at(pos.x));
+                    wattroff(window, COLOR_PAIR(getColorGroup(pos+view->scrollPos)));
+                }
             }
         }
         for(int row{maximumVisibleRowCount}; row < view->size.y; ++row){
@@ -699,7 +806,15 @@ int main(int argc, char** argv){
     keypad(stdscr, TRUE); // enable fn keys
     set_escdelay(0);
 
-    //start_color();
+    start_color();
+
+    init_pair(1, COLOR_WHITE, BG_COLOR);
+    init_pair(KEYWORD_COLORPAIR, COLOR_MAGENTA, BG_COLOR);
+    init_pair(STRING_COLORPAIR, COLOR_GREEN, BG_COLOR);
+    init_pair(COMMENT_COLORPAIR, 243, BG_COLOR);
+    init_pair(NUMBER_COLORPAIR, 215, BG_COLOR);
+    init_pair(FUNCTION_COLORPAIR, 105, BG_COLOR);
+    init_pair(VARIABLE_COLORPAIR, 105, BG_COLOR);
 
     Vec2<int> terminalSize {getTerminalSize() - Vec2<int>{2,4}};
 
