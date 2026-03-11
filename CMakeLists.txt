@@ -32,6 +32,15 @@ set(CMAKE_CXX_EXE_LINKER_FLAGS_RELWITHDEBINFO_INIT "-fsanitize=address,undefined
 find_package(Curses REQUIRED)
 include_directories(${CURSES_INCLUDE_DIR})
 
-add_executable(bingvim src/main.cpp)
+file(GLOB CORE_SOURCES "src/core/*.cpp")
+file(GLOB EDITOR_SOURCES "src/editor/*.cpp")
+
+set(SOURCES
+    ${CORE_SOURCES}
+    ${EDITOR_SOURCES}
+    src/main.cpp
+)
+
+add_executable(bingvim ${SOURCES})
 
 target_link_libraries(bingvim ${CURSES_LIBRARY})
