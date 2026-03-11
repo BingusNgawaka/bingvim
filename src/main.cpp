@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <ncurses.h>
 #include <regex>
@@ -24,6 +26,7 @@
 #define COMMENT_COLORPAIR 5
 #define FUNCTION_COLORPAIR 6
 #define VARIABLE_COLORPAIR 7
+#define CLASS_COLORPAIR 8
 
 #define BG_COLOR 235
 
@@ -34,11 +37,11 @@
 #define SHIFT(x) (x - 32)
 
 enum Mode{
-    NORMAL, INSERT, VISUAL
+    NORMAL, INSERT, COMMAND, UNDOTREE
 };
 
 enum SyntaxGroup{
-    KEYWORD, STRING, COMMENT, NUMBER, FUNCTION, VARIABLE
+    KEYWORD, STRING, COMMENT, NUMBER, FUNCTION, VARIABLE, CLASS
 };
 
 template <typename T>
@@ -404,14 +407,14 @@ struct Pane{
         std::sregex_iterator end;
         for(std::sregex_iterator it(line.begin(), line.end(), reg); it != end; ++it){
             auto match = *it;
-            std::size_t start {static_cast<std::size_t>(match.position())};
-            std::size_t len {static_cast<std::size_t>(match.length())};
+            int start {static_cast<int>(match.position())};
+            int len {static_cast<int>(match.length())};
 
             if(group == FUNCTION || group == VARIABLE) --len;
             if(group == VARIABLE) ++start;
 
-            for(std::size_t i{start}; i < start+len; ++i){
-                colorMap[row][i] = group;
+            for(int i{start}; i < start+len; ++i){
+                colorMap[static_cast<int>(row)][i] = group;
             }
         }
     }
@@ -480,6 +483,9 @@ struct Pane{
                 case SyntaxGroup::VARIABLE:
                     return VARIABLE_COLORPAIR;
                     break;
+                case SyntaxGroup::CLASS:
+                    return CLASS_COLORPAIR;
+                    break;
             }
         }
 
@@ -496,26 +502,29 @@ struct Pane{
         std::regex funcRegex("\\b([A-Za-z_]\\w*)\\s*\\(");
         std::regex varRegex("\\.([A-Za-z_]\\w*)");
         std::regex commentRegex("//.*"); // matches singleline comments
+        std::regex classRegex("\\b([A-Za-z_]\\w*)(?=::)"); // matches any word before a ::
 
         for(int row{}; row < maximumVisibleRowCount; ++row){
+            colorMap.clear();
             std::string line {view->buf->lines.at(static_cast<std::size_t>(row+view->scrollPos.y))};
             wmove(window, static_cast<int>(row), 0);
             wclrtoeol(window);
             if(static_cast<std::size_t>(view->scrollPos.x) < line.size()){
                 line = line.substr(static_cast<std::size_t>(view->scrollPos.x));
                 //
-                int absRow {row + view->scrollPos.y};
+                std::size_t absRow {static_cast<std::size_t>(row + view->scrollPos.y)};
                 checkAndSetRegexAgainstLine(absRow, numberRegex, SyntaxGroup::NUMBER);
                 checkAndSetRegexAgainstLine(absRow, varRegex, SyntaxGroup::VARIABLE);
-                checkAndSetRegexAgainstLine(absRow, keywordRegex, SyntaxGroup::KEYWORD);
                 checkAndSetRegexAgainstLine(absRow, funcRegex, SyntaxGroup::FUNCTION);
+                checkAndSetRegexAgainstLine(absRow, classRegex, SyntaxGroup::CLASS);
+                checkAndSetRegexAgainstLine(absRow, keywordRegex, SyntaxGroup::KEYWORD);
                 checkAndSetRegexAgainstLine(absRow, stringRegex, SyntaxGroup::STRING);
                 checkAndSetRegexAgainstLine(absRow, commentRegex, SyntaxGroup::COMMENT);
                 //
 
-                for(Vec2<int> pos{0, row}; pos.x < line.size(); ++pos.x){
+                for(Vec2<int> pos{0, row}; static_cast<std::size_t>(pos.x) < line.size(); ++pos.x){
                     wattron(window, COLOR_PAIR(getColorGroup(pos+view->scrollPos)));
-                    mvwprintw(window, pos.y, pos.x , "%c", line.at(pos.x));
+                    mvwprintw(window, pos.y, pos.x , "%c", line.at(static_cast<std::size_t>(pos.x)));
                     wattroff(window, COLOR_PAIR(getColorGroup(pos+view->scrollPos)));
                 }
             }
@@ -656,17 +665,17 @@ struct Editor{
                 rightSideOfLine
         });
 
-        int currIndent {countIndentation(buf->lines.at(castedPos.y))};
-        int newIndent {};
+        int currIndent {std::max(countIndentation(buf->lines.at(castedPos.y)), 0)};
+        int newIndent;
 
         if(buf->lines.at(castedPos.y).back() == '{')
             newIndent = currIndent + tabSize;
-        else if(buf->lines.at(castedPos.y).back() == '}')
-            newIndent = currIndent - tabSize;
+        //else if(buf->lines.at(castedPos.y).back() == '}')
+            //newIndent = currIndent - tabSize;
         else
             newIndent = currIndent;
 
-        std::string indentation (static_cast<std::size_t>(newIndent), ' ');
+        std::string indentation (static_cast<std::size_t>(std::max(newIndent, 0)), ' ');
 
         std::string newString {indentation.append(rightSideOfLine)};
         buf->lines.at(castedPos.y).erase(castedPos.x);
@@ -740,9 +749,22 @@ struct Editor{
         }
     }
     void handleInsertModeInput(int ch){
+        Vec2<int> pos {getCurrViewport()->absolutePos};
+        Vec2<std::size_t> castedPos {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
         if(ch >= 0 && ch <= 255 && std::isprint(ch)){
-            Vec2<int> pos {getCurrViewport()->absolutePos};
-            getCurrBuffer()->lines.at(static_cast<std::size_t>(pos.y)).insert(static_cast<std::size_t>(pos.x), 1, static_cast<char>(ch));
+            getCurrBuffer()->lines.at(castedPos.y).insert(castedPos.x, 1, static_cast<char>(ch));
+
+            int currIndent {countIndentation(getCurrBuffer()->lines.at(castedPos.y))};
+            if(ch == '}' && currIndent > 0){
+                std::size_t diff {static_cast<std::size_t>(tabSize)};
+                std::string str(diff, ' ');
+                stagedEdits.push_back({
+                        Edit::Type::DELETE,
+                        pos,
+                        str
+                });
+                getCurrBuffer()->lines.at(castedPos.y).erase(pos.x - diff, diff);
+            }
 
             stagedEdits.push_back({
                     Edit::Type::INSERT,
@@ -754,10 +776,9 @@ struct Editor{
         }
 
         if(ch == '\t'){
-            Vec2<int> pos {getCurrViewport()->absolutePos};
             int indentDiff {tabSize - pos.x % tabSize};
             std::string addedText(static_cast<std::size_t>(indentDiff), ' ');
-            getCurrBuffer()->lines.at(static_cast<std::size_t>(pos.y)).insert(static_cast<std::size_t>(pos.x), addedText);
+            getCurrBuffer()->lines.at(castedPos.y).insert(castedPos.x, addedText);
 
             stagedEdits.push_back({
                     Edit::Type::INSERT,
@@ -782,8 +803,6 @@ struct Editor{
             handleEnterLogic();
         }
     }
-    void handleVisualModeInput(int ch){
-    }
     void handleInput(int ch){
         switch(currMode){
             case NORMAL:
@@ -792,8 +811,9 @@ struct Editor{
             case INSERT:
                 handleInsertModeInput(ch);
                 break;
-            case VISUAL:
-                handleVisualModeInput(ch);
+            case COMMAND:
+                break;
+            case UNDOTREE:
                 break;
         }
     }
@@ -815,6 +835,7 @@ int main(int argc, char** argv){
     init_pair(NUMBER_COLORPAIR, 215, BG_COLOR);
     init_pair(FUNCTION_COLORPAIR, 105, BG_COLOR);
     init_pair(VARIABLE_COLORPAIR, 105, BG_COLOR);
+    init_pair(CLASS_COLORPAIR, 221, BG_COLOR);
 
     Vec2<int> terminalSize {getTerminalSize() - Vec2<int>{2,4}};
 
