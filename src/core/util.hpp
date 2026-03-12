@@ -11,4 +11,5 @@
 std::vector<std::string> readFile(std::string filepath);
 Vec2<int> getTerminalSize();
 int countIndentation(std::string& str);
+std::string getNewIndentationForNewLine(std::string currLine);
 std::string editTypeToStr(Edit& edit);

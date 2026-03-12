@@ -64,28 +64,35 @@ void Editor::handleBackspaceLogic(){
     Buffer* buf {getCurrBuffer()};
     
     if(pos.x > 0){
-
         std::size_t delCount {1};
-        int ind {};
-        for(auto it {buf->lines.at(castedPos.y).begin() + pos.x-1}; it != buf->lines.at(castedPos.y).begin(); --it){
-            ind++;
-            if(*it == ' ' && (pos.x-ind) % tabSize != 0){
-                ++delCount;
+        int i {pos.x-1};
+        int whiteCount {};
+        while(i >= 0){
+            if(buf->lines.at(pos.y).at(i) == ' ' && !(i % tabSize == 0)){
+                whiteCount++;
             }else{
-                if(*it != ' ' && ind > 1)
-                    --delCount;
                 break;
             }
+            --i;
         }
-        std::string deletedStr {buf->lines.at(castedPos.y).substr(castedPos.x-delCount, delCount)};
+
+        if(whiteCount > 1){
+            delCount += whiteCount;
+        }
+
+        int desiredX {std::max(0,pos.x-static_cast<int>(delCount))};
+        std::size_t castedX {static_cast<std::size_t>(desiredX)};
+
+        std::string deletedStr {buf->lines.at(castedPos.y).substr(castedX, delCount)};
 
         stagedEdits.push_back({
                 Edit::Type::DELETE,
-                pos,
+                // no idea why this is the way it is and i dont wanna touch it cause it works
+                {pos.x - (whiteCount > 1 ? whiteCount : 0), pos.y},
                 deletedStr
         });
 
-        buf->lines.at(castedPos.y).erase(castedPos.x-delCount, delCount);
+        buf->lines.at(castedPos.y).erase(castedX, delCount);
         getCurrViewport()->moveCursor({-static_cast<int>(delCount), 0}, Mode::INSERT);
 
     }else if(pos.y > 0){
@@ -115,23 +122,13 @@ void Editor::handleEnterLogic(){
             rightSideOfLine
     });
 
-    int currIndent {std::max(countIndentation(buf->lines.at(castedPos.y)), 0)};
-    int newIndent;
-
-    if(buf->lines.at(castedPos.y).back() == '{')
-        newIndent = currIndent + tabSize;
-    //else if(buf->lines.at(castedPos.y).back() == '}')
-        //newIndent = currIndent - tabSize;
-    else
-        newIndent = currIndent;
-
-    std::string indentation (static_cast<std::size_t>(std::max(newIndent, 0)), ' ');
+    std::string indentation {getNewIndentationForNewLine(getCurrViewport()->getCurrLine())};
 
     std::string newString {indentation.append(rightSideOfLine)};
     buf->lines.at(castedPos.y).erase(castedPos.x);
     buf->lines.insert(buf->lines.begin()+pos.y+1, newString);
 
-    getCurrViewport()->setCursor({newIndent, pos.y+1}, Mode::INSERT);
+    getCurrViewport()->setCursor({countIndentation(buf->lines.at(pos.y+1)), pos.y+1}, Mode::INSERT);
 }
 
 // movement keybinds that i actually use
@@ -186,6 +183,62 @@ void Editor::handleNormalModeInput(int ch){
         startChange();
     }
 
+    if(ch == 'o'){
+        Vec2<int> pos {getCurrViewport()->absolutePos};
+        Vec2<std::size_t> castedPos {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
+
+        currMode = Mode::INSERT;
+        startChange();
+
+        std::string newLineIndentation {getNewIndentationForNewLine(getCurrViewport()->getCurrLine())};
+
+        getCurrBuffer()->lines.insert(getCurrBuffer()->lines.begin()+pos.y+1, newLineIndentation);
+
+        // new line can be thought of splitting at the end of the curr line
+        stagedEdits.push_back({
+                Edit::Type::SPLIT,
+                {static_cast<int>(getCurrViewport()->getCurrLine().size()), pos.y},
+                ""
+        });
+
+        getCurrViewport()->setCursor({static_cast<int>(newLineIndentation.size()), pos.y+1}, currMode);
+    }
+
+    if(ch == 'O'){
+        Vec2<int> pos {getCurrViewport()->absolutePos};
+        Vec2<std::size_t> castedPos {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
+
+        currMode = Mode::INSERT;
+        startChange();
+
+        //
+        std::string line {getCurrViewport()->getCurrLine()};
+        int currIndent {std::max(countIndentation(line), 0)};
+        int newIndent;
+
+        if(line.back() == '{') // opposite of normal indent new line rules because going up
+            newIndent = currIndent - tabSize;
+        else if(line.back() == '}')
+            newIndent = currIndent + tabSize;
+        else
+            newIndent = currIndent;
+
+        std::string newLineIndentation(std::max(0, newIndent), ' ');
+        //
+
+        getCurrBuffer()->lines.insert(getCurrBuffer()->lines.begin()+std::max(0, pos.y), newLineIndentation);
+
+        // new line can be thought of splitting at the end of the curr line
+        stagedEdits.push_back({
+                Edit::Type::SPLIT,
+                {static_cast<int>(getCurrBuffer()->lines.at(std::max(0,pos.y-1)).size()), pos.y-1},
+                ""
+        });
+
+        getCurrViewport()->setCursor({static_cast<int>(newLineIndentation.size()), pos.y}, currMode);
+
+    }
+
     if(ch == 'a'){
         currMode = Mode::INSERT;
         startChange();
@@ -202,26 +255,31 @@ void Editor::handleInsertModeInput(int ch){
     Vec2<int> pos {getCurrViewport()->absolutePos};
     Vec2<std::size_t> castedPos {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
     if(ch >= 0 && ch <= 255 && std::isprint(ch)){
-        getCurrBuffer()->lines.at(castedPos.y).insert(castedPos.x, 1, static_cast<char>(ch));
 
+        /*
         int currIndent {countIndentation(getCurrBuffer()->lines.at(castedPos.y))};
         if(ch == '}' && currIndent > 0){
             std::size_t diff {static_cast<std::size_t>(tabSize)};
             std::string str(diff, ' ');
             stagedEdits.push_back({
                     Edit::Type::DELETE,
-                    pos,
+                    {pos.x-static_cast<int>(diff), pos.y},
                     str
             });
             getCurrBuffer()->lines.at(castedPos.y).erase(pos.x - diff, diff);
+            getCurrViewport()->moveCursor({-static_cast<int>(diff), 0}, Mode::INSERT);
         }
+
+        pos = getCurrViewport()->absolutePos;
+        castedPos = {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
+        */
 
         stagedEdits.push_back({
                 Edit::Type::INSERT,
                 pos,
                 std::string(1, static_cast<char>(ch))
         });
-
+        getCurrBuffer()->lines.at(castedPos.y).insert(castedPos.x, 1, static_cast<char>(ch));
         getCurrViewport()->moveCursor({1, 0}, Mode::INSERT);
     }
 

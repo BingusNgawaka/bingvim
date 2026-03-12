@@ -1,6 +1,8 @@
 #include "buffer.hpp"
 #include "../core/util.hpp"
 #include "../core/config.hpp"
+#include <ncurses.h>
+#include <stdexcept>
 
 Buffer::Buffer(std::vector<std::string> lines, std::string filepath):
     lines(lines),
@@ -20,10 +22,21 @@ void Buffer::undoEdit(Edit& edit){
     // apply inverse operations
     switch(edit.type){
         case Edit::Type::INSERT:
+            if(castedPos.x >= lines.at(castedPos.y).size()){
+                std::string a = "\nout of range when undoing insert, textUndone(";
+                a.append(edit.text.c_str());
+                a.append("), size(");
+                a.append(std::to_string(edit.text.size()));
+                a.append("), pos.x(");
+                a.append(std::to_string(edit.pos.x));
+                a.append(")\n");
+
+                throw std::out_of_range(a);
+            }
             lines.at(castedPos.y).erase(castedPos.x, edit.text.size());
             break;
         case Edit::Type::DELETE:
-            lines.at(castedPos.y).insert(castedPos.x, edit.text);
+            lines.at(castedPos.y).insert(std::min(lines.at(castedPos.y).size(), castedPos.x-1), edit.text);
             break;
         case Edit::Type::JOIN:
             lines.insert(lines.begin()+edit.pos.y, edit.text);

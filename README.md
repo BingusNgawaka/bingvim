@@ -69,12 +69,12 @@ Open a file to edit:
 | `A` | Enter insert mode at end of line |
 | `u` | Undo last change |
 | `Ctrl + r` | Redo change |
+| `o` | Insert line *below* and enter insert mode |
+| `O` | Insert line *above* and enter insert mode |
 >| `U` | Enter Undo Tree navigator |
 >| `w` | Jump to next word |
 >| `b` | Jump to previous word |
 >| `e` | Jump to end of word |
->| `o` | Insert line *below* and enter insert mode |
->| `O` | Insert line *above* and enter insert mode |
 >| `dd` | Delete current line |
 >| `:` | Enter command mode |
 
@@ -87,6 +87,7 @@ Open a file to edit:
 | `Enter` | Split line and apply indentation |
 | `Tab` | Insert spaces aligned to configured tab size |
 | `Printable characters` | Insert text |
+>| `Ctrl-W` | Delete previous word |
 
 ### Undo Tree Navigator
 

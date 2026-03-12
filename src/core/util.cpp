@@ -71,3 +71,17 @@ std::string editTypeToStr(Edit& edit){
 
     return "none";
 }
+
+std::string getNewIndentationForNewLine(std::string currLine){
+    int currIndent {std::max(countIndentation(currLine), 0)};
+    int newIndent;
+
+    if(currLine.back() == '{')
+        newIndent = currIndent + tabSize;
+    //else if(buf->lines.at(castedPos.y).back() == '}')
+        //newIndent = currIndent - tabSize;
+    else
+        newIndent = currIndent;
+
+    return std::string(std::max(0, newIndent), ' ');
+}
