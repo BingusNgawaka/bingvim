@@ -49,7 +49,6 @@ void Pane::checkAndSetRegexAgainstLine(std::size_t row, std::regex reg, SyntaxGr
 
 void Pane::drawDebug(){
     //TODO make this its own window itd be so much easier lol
-    /*
     int x = 100;
     int y = 16;
     mvwprintw(stdscr, y, x-10, "+------debug------+");
@@ -61,15 +60,8 @@ void Pane::drawDebug(){
     mvwprintw(stdscr, y+7, x-10, "  lastChangeEndCursor(%d, %d)  ", view->buf->lastChange->endCursorPos.x, view->buf->lastChange->endCursorPos.y);
     mvwprintw(stdscr, y+8, x-10, "  lastChangeBeginCursor(%d, %d)  ", view->buf->lastChange->startCursorPos.x, view->buf->lastChange->startCursorPos.y);
 
-    for(int i{}; i < view->buf->lastChange->edits.size(); ++i){
-        mvwprintw(stdscr, y+9+i, x-10, "  Edit%d: (%s)  ", i, editTypeToStr(view->buf->lastChange->edits.at(i)).c_str());
-    }
-
     refresh();
     wrefresh(window);
-
-
-    */
 }
 
 // returns color pair index for a given char pos

@@ -1,4 +1,7 @@
 #include "editor.hpp"
+#include <cctype>
+#include <cstdio>
+#include <iostream>
 #include <ncurses.h>
 #include "../core/config.hpp"
 #include "../core/util.hpp"
@@ -183,6 +186,92 @@ void Editor::handleNormalModeInput(int ch){
         startChange();
     }
 
+    /*
+    if(ch == 'b'){
+        enum CharType {ALPHANUMERIC, PUNCTUATION, WHITESPACE};
+
+        CharType type;
+
+        std::string line {getCurrViewport()->getCurrLine()};
+        if(line.at(getCurrViewport()->absolutePos.x) == ' '){
+            type = WHITESPACE;
+        }else if(std::isalnum(line.at(getCurrViewport()->absolutePos.x))){
+            type = PUNCTUATION;
+        }else{
+            type = ALPHANUMERIC;
+        }
+
+        std::vector<std::string> dels {};
+        dels = getPunctuationList();
+        auto delSeparatedWords {split(line, dels)};
+        dels = {" "};
+        auto whitespaceSeparatedWords {split(line, dels)};
+        int closestX {-1};
+
+        auto findClosestX = [this](std::map<int, std::string>& delSeparatedWords, int& closestX){
+            for(const auto& [xPos, word] : delSeparatedWords){
+                if(xPos < this->getCurrViewport()->absolutePos.x && (xPos > closestX || closestX == -1)){
+                    closestX = xPos;
+                }
+            }
+        };
+        
+        //findClosestX(delSeparatedWords, closestX);
+        findClosestX(whitespaceSeparatedWords, closestX);
+
+        if(closestX != -1){
+            getCurrViewport()->setCursor({closestX, getCurrViewport()->absolutePos.y});
+            if(line.at(getCurrViewport()->absolutePos.x) == ' ')
+                getCurrViewport()->moveCursor({1, 0});
+        }
+    }
+
+    if(ch == 'w'){
+        // look at curr char type (is it alphanumeric or punc)
+        // move to next instance of opposite type
+        // if whitespace is the delimiter move one forward
+        enum CharType {ALPHANUMERIC, PUNCTUATION, WHITESPACE};
+
+        CharType type;
+
+        std::string line {getCurrViewport()->getCurrLine()};
+        if(line.at(getCurrViewport()->absolutePos.x) == ' '){
+            type = WHITESPACE;
+        }else if(std::isalnum(line.at(getCurrViewport()->absolutePos.x))){
+            type = PUNCTUATION;
+        }else{
+            type = ALPHANUMERIC;
+        }
+
+        std::vector<std::string> dels {};
+        dels = getPunctuationList();
+
+        // check next delimiter separated word and whitespace separated word
+        // choose min
+        auto delSeparatedWords {split(line, dels)};
+        dels = {" "};
+        auto whitespaceSeparatedWords {split(line, dels)};
+        int closestX {-1};
+
+        auto findClosestX = [this](std::map<int, std::string>& delSeparatedWords, int& closestX){
+            for(const auto& [xPos, word] : delSeparatedWords){
+                if(xPos > this->getCurrViewport()->absolutePos.x && (xPos < closestX || closestX == -1)){
+                    closestX = xPos;
+                }
+            }
+        };
+        
+        findClosestX(delSeparatedWords, closestX);
+        findClosestX(whitespaceSeparatedWords, closestX);
+
+        if(closestX != -1){
+            getCurrViewport()->setCursor({closestX, getCurrViewport()->absolutePos.y});
+            if(line.at(getCurrViewport()->absolutePos.x) == ' ')
+                getCurrViewport()->moveCursor({1, 0});
+        }
+    }
+    */
+
     if(ch == 'o'){
         Vec2<int> pos {getCurrViewport()->absolutePos};
         Vec2<std::size_t> castedPos {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
@@ -256,7 +345,6 @@ void Editor::handleInsertModeInput(int ch){
     Vec2<std::size_t> castedPos {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
     if(ch >= 0 && ch <= 255 && std::isprint(ch)){
 
-        /*
         int currIndent {countIndentation(getCurrBuffer()->lines.at(castedPos.y))};
         if(ch == '}' && currIndent > 0){
             std::size_t diff {static_cast<std::size_t>(tabSize)};
@@ -272,7 +360,6 @@ void Editor::handleInsertModeInput(int ch){
 
         pos = getCurrViewport()->absolutePos;
         castedPos = {static_cast<std::size_t>(pos.x), static_cast<std::size_t>(pos.y)};
-        */
 
         stagedEdits.push_back({
                 Edit::Type::INSERT,

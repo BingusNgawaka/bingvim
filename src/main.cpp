@@ -1,3 +1,4 @@
+#include <iostream>
 #include <ncurses.h>
 #include "editor/editor.hpp"
 #include "core/config.hpp"

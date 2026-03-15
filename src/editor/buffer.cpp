@@ -57,7 +57,7 @@ void Buffer::redoEdit(Edit& edit){
             lines.at(castedPos.y).insert(castedPos.x, edit.text);
             break;
         case Edit::Type::DELETE:
-            lines.at(castedPos.y).erase(castedPos.x-1, edit.text.size());
+            lines.at(castedPos.y).erase(std::max(0, edit.pos.x-1), edit.text.size());
             break;
         case Edit::Type::JOIN:
             lines.at(castedPos.y-1).append(lines.at(castedPos.y));
