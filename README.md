@@ -23,7 +23,7 @@ The goal was to explore the data structures underlying a more fully featured tex
 ### Undo/Redo Tree
 - All edits are broken into fundamental operations (e.g. insert, delete, split line, join line)
 - Undo and Redo operate on 'commited' edit sequences
->- An Undo Tree navigation panel for navigating different branches
+- An Undo Tree navigation panel for navigating different branches
 
 ### Viewport and Scrolling
 - Vertical and horizontal scrolling with configurable scroll buffers
@@ -72,8 +72,7 @@ Open a file to edit:
 | `o` | Insert line *below* and enter insert mode |
 | `O` | Insert line *above* and enter insert mode |
 | `U` | Enter Undo Tree navigator |
->| `dd` | Delete current line |
->| `:` | Enter command mode |
+| `:` | Enter command mode |
 
 ### Insert Mode
 
@@ -84,7 +83,6 @@ Open a file to edit:
 | `Enter` | Split line and apply indentation |
 | `Tab` | Insert spaces aligned to configured tab size |
 | `Printable characters` | Insert text |
->| `Ctrl-W` | Delete previous word |
 
 ### Undo Tree Navigator
 
@@ -100,9 +98,9 @@ Open a file to edit:
 
 | Command | Action |
 |----|----|
-| `w` | Write changes to file |
+| `w / write` | Write changes to file |
 | `wq` | Write changes to file and quit |
-| `q` | Exit editor |
+| `q / quit` | Exit editor |
 
 ---
 

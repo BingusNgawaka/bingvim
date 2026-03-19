@@ -25,7 +25,7 @@ Vec2<int> Pane::getPos(){
 
 void Pane::moveCursorToViewPos(){
     Vec2<int> viewPos {view->absolutePos - view->scrollPos};
-    wmove(window, viewPos.y, viewPos.x);
+    wmove(window, viewPos.y, viewPos.x + LINENUM_BUFFER);
     wrefresh(window);
 }
 
@@ -120,6 +120,19 @@ void Pane::render(){
         std::string line {view->buf->lines.at(static_cast<std::size_t>(row+view->scrollPos.y))};
         wmove(window, static_cast<int>(row), 0);
         wclrtoeol(window);
+
+        // print line num
+        int digitCount {};
+        int lineNum {row+view->scrollPos.y + 1};
+        int num {lineNum};
+        while(num >= 10){
+            num /= 10;
+            ++digitCount;
+        }
+        wattron(window, COLOR_PAIR(COMMENT_COLORPAIR));
+        mvwprintw(window, row, LINENUM_BUFFER - 2 - digitCount, "%d", lineNum);
+        wattroff(window, COLOR_PAIR(COMMENT_COLORPAIR));
+
         if(static_cast<std::size_t>(view->scrollPos.x) < line.size()){
             line = line.substr(static_cast<std::size_t>(view->scrollPos.x));
             //
@@ -132,10 +145,9 @@ void Pane::render(){
             checkAndSetRegexAgainstLine(absRow, stringRegex, SyntaxGroup::STRING);
             checkAndSetRegexAgainstLine(absRow, commentRegex, SyntaxGroup::COMMENT);
             //
-
             for(Vec2<int> pos{0, row}; static_cast<std::size_t>(pos.x) < line.size(); ++pos.x){
                 wattron(window, COLOR_PAIR(getColorGroup(pos+view->scrollPos)));
-                mvwprintw(window, pos.y, pos.x , "%c", line.at(static_cast<std::size_t>(pos.x)));
+                mvwprintw(window, pos.y, pos.x+LINENUM_BUFFER , "%c", line.at(static_cast<std::size_t>(pos.x)));
                 wattroff(window, COLOR_PAIR(getColorGroup(pos+view->scrollPos)));
             }
         }

@@ -25,4 +25,6 @@ namespace config{
 #define SCROLL_BUFFER_Y 8
 #define SCROLL_BUFFER_X 8
 
+#define LINENUM_BUFFER 6
+
 }
