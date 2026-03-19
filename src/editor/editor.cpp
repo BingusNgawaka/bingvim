@@ -29,6 +29,11 @@ std::size_t Editor::addPane(std::size_t viewportIndex, Vec2<int> pos, Vec2<int> 
         newwin(size.y, size.x, pos.y, pos.x)
     });
 
+    float scaleFac {2};
+    float offsetFac {((1 - 1/scaleFac)/2)};
+
+    undoTreeWindow = newwin(size.y/scaleFac, size.x/scaleFac, pos.y+offsetFac*size.y, pos.x+offsetFac*size.x);
+
     activePane = panes.size() - 1;
     return activePane;
 }
@@ -38,8 +43,21 @@ Pane& Editor::getCurrPane(){
 }
 
 void Editor::renderCurrPane(){
-    getCurrPane().render();
+    if(currMode == Mode::UNDOTREE){
+        werase(undoTreeWindow);
+        wborder(undoTreeWindow, '|', '|', '-', '-', '+', '+', '+', '+');
 
+        Vec2<int> offset {2, 2};
+        Vec2<float> scale {2, 1};
+        for(const auto& [node, pos] : treePositions){
+            mvwprintw(undoTreeWindow, offset.y+node->depth*scale.y, offset.x+pos*scale.x, (isLeaf(node) ? "x" : "o"));
+        }
+
+        wmove(undoTreeWindow, offset.y+selectedNode->depth*scale.y, offset.x+treePositions[selectedNode]*scale.x);
+        wrefresh(undoTreeWindow);
+    }else{
+        getCurrPane().render();
+    }
 }
 
 Viewport* Editor::getCurrViewport(){
@@ -134,6 +152,98 @@ void Editor::handleEnterLogic(){
     getCurrViewport()->setCursor({countIndentation(buf->lines.at(pos.y+1)), pos.y+1}, Mode::INSERT);
 }
 
+void Editor::handleUndoTreeInput(int ch){
+    if(ch == KEY_ESCAPE){
+        currMode = Mode::NORMAL;
+        return;
+    }
+
+    if(ch == 10){ // ENTER
+        if(selectedNode != getCurrBuffer()->lastChange){
+            // >find list of ancestors for both nodes A and B
+            // >make list of common ancestors
+            // >find deepest ancestor (LCA)
+            // start at lastChange,
+            //  traverse upwards undoing as we go until we reach LCA
+            //  then start traversing down the other path redoing
+            
+            std::map<BufferChange*, std::vector<BufferChange*>> pathMapA {};
+            std::map<BufferChange*, std::vector<BufferChange*>> pathMapB {};
+
+            auto A {selectedNode};
+            auto B {getCurrBuffer()->lastChange};
+            auto ancestorsA {getAncestorVecAndPathMap(A, pathMapA)};
+            auto ancestorsB {getAncestorVecAndPathMap(B, pathMapB)};
+
+
+            std::vector<BufferChange*> commonAncestors {};
+            for(const auto& ancestor : ancestorsA){
+                if(std::find(ancestorsB.begin(), ancestorsB.end(), ancestor) != ancestorsB.end()){
+                    commonAncestors.push_back(ancestor);
+                }
+            }
+
+            int maxDepth {0};
+            BufferChange* LCA;
+            for(const auto& ancestor : commonAncestors){
+                if(ancestor->depth >= maxDepth){
+                    LCA = ancestor;
+                    maxDepth = ancestor->depth;
+                }
+            }
+
+        }
+        currMode = Mode::NORMAL;
+        return;
+    }
+
+    if(ch == 'h'){
+        auto depthMap {getDepthMap(getCurrBuffer()->rootChange)};
+        std::vector<BufferChange*> inlineNodes {depthMap.at(selectedNode->depth)};
+
+        float maxPos {-1};
+        BufferChange* newNode;
+        if(inlineNodes.size() > 0){
+            for(const auto& node : inlineNodes){
+                float newPos {treePositions.at(node)};
+                if(newPos < treePositions.at(selectedNode) && (newPos > maxPos || maxPos == -1)){
+                    maxPos = newPos;
+                    newNode = node;
+                }
+            }
+            if(maxPos != -1)
+                selectedNode = newNode;
+        }
+    }
+    if(ch == 'l'){
+        auto depthMap {getDepthMap(getCurrBuffer()->rootChange)};
+        std::vector<BufferChange*> inlineNodes {depthMap.at(selectedNode->depth)};
+
+        float minPos {-1};
+        BufferChange* newNode;
+        if(inlineNodes.size() > 0){
+            for(const auto& node : inlineNodes){
+                float newPos {treePositions.at(node)};
+                if(newPos > treePositions.at(selectedNode) && (newPos < minPos || minPos == -1)){
+                    minPos = newPos;
+                    newNode = node;
+                }
+            }
+            if(minPos != -1)
+                selectedNode = newNode;
+        }
+    }
+
+    if(ch == 'j'){
+        if(selectedNode->children.size() > 0)
+            selectedNode = selectedNode->children.back();
+    }
+    if(ch == 'k'){
+        if(selectedNode->parent != nullptr)
+            selectedNode = selectedNode->parent;
+    }
+}
+
 // movement keybinds that i actually use
 // DONE:
 // hjkl
@@ -173,6 +283,12 @@ void Editor::handleNormalModeInput(int ch){
         Vec2<int> undoVec {getCurrBuffer()->undoLastChange()};
         if(undoVec != Vec2<int>{-1, -1})
             getCurrViewport()->setCursor(undoVec);
+    }
+
+    if(ch == 'U'){
+        selectedNode = getCurrBuffer()->lastChange;
+        treePositions = getTreePosiions(getCurrBuffer()->rootChange);
+        currMode = Mode::UNDOTREE;
     }
 
     if(ch == CTRL('r')){
@@ -409,6 +525,6 @@ void Editor::handleInput(int ch){
         case COMMAND:
             break;
         case UNDOTREE:
-            break;
+            handleUndoTreeInput(ch);
     }
 }

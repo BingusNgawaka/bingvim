@@ -8,11 +8,11 @@ Buffer::Buffer(std::vector<std::string> lines, std::string filepath):
     lines(lines),
     filepath(filepath),
     modified(false),
-    rootChange(new BufferChange{{0, 0}, {0,0}, {}, nullptr, {}}),
+    rootChange(new BufferChange{{0, 0}, {0,0}, 0, {}, nullptr, {}}),
     lastChange(rootChange){}
 
 void Buffer::addChange(Vec2<int>& startCursorPos, Vec2<int>& endCursorPos, std::vector<Edit>& edits){
-    BufferChange* change {new BufferChange{startCursorPos, endCursorPos, edits, lastChange, {}}};
+    BufferChange* change {new BufferChange{startCursorPos, endCursorPos, lastChange->depth+1, edits, lastChange, {}}};
     lastChange->children.push_back(change);
     lastChange = change;
 }

@@ -144,3 +144,17 @@ std::vector<std::string> getPunctuationList(){
     }
     return dels;
 }
+
+std::vector<BufferChange*> getAncestorVecAndPathMap(BufferChange* node, std::map<BufferChange*, std::vector<BufferChange*>>& pathMap){
+    std::vector<BufferChange*> out {};
+    BufferChange* currNode {node};
+
+    while(currNode->parent != nullptr){
+        out.push_back(currNode->parent);
+        currNode = currNode->parent;
+
+        pathMap[currNode] = out;
+    }
+
+    return out;
+}

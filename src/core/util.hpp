@@ -17,3 +17,5 @@ std::string editTypeToStr(Edit& edit);
 std::map<int, std::string> split(std::string& inputStr, std::vector<std::string>& delimiters);
 std::vector<std::string> getPunctuationList();
 std::vector<std::string> getAlphaNumList();
+
+std::vector<BufferChange*> getAncestorVecAndPathMap(BufferChange* node, std::map<BufferChange*, std::vector<BufferChange*>>& pathMap);

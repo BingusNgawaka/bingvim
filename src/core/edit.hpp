@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.hpp"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -23,8 +24,17 @@ struct BufferChange{
     Vec2<int> startCursorPos;
     Vec2<int> endCursorPos;
 
+    int depth;
+
     std::vector<Edit> edits;
 
     BufferChange* parent;
     std::vector<BufferChange*> children;
 };
+
+void updateDepthMap(BufferChange* node, std::map<int, std::vector<BufferChange*>>& depthMap, int& currDepth);
+std::map<int, std::vector<BufferChange*>> getDepthMap(BufferChange* root);
+
+bool isLeaf(BufferChange* node);
+float getNodePosition(BufferChange* node, int& leafCount, std::map<BufferChange*, float>& posMap);
+std::map<BufferChange*, float> getTreePosiions(BufferChange* root);

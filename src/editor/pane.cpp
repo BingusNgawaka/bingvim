@@ -49,7 +49,7 @@ void Pane::checkAndSetRegexAgainstLine(std::size_t row, std::regex reg, SyntaxGr
 
 void Pane::drawDebug(){
     //TODO make this its own window itd be so much easier lol
-    int x = 100;
+    int x = 60;
     int y = 16;
     mvwprintw(stdscr, y, x-10, "+------debug------+");
     mvwprintw(stdscr, y+1, x-10, "  absPos(%d, %d)  ", view->absolutePos.x, view->absolutePos.y);
@@ -59,6 +59,14 @@ void Pane::drawDebug(){
     mvwprintw(stdscr, y+6, x-10, "  ccc(%s) ", std::to_string(can_change_color()).c_str());
     mvwprintw(stdscr, y+7, x-10, "  lastChangeEndCursor(%d, %d)  ", view->buf->lastChange->endCursorPos.x, view->buf->lastChange->endCursorPos.y);
     mvwprintw(stdscr, y+8, x-10, "  lastChangeBeginCursor(%d, %d)  ", view->buf->lastChange->startCursorPos.x, view->buf->lastChange->startCursorPos.y);
+
+    /*
+    auto posMap {getTreePosiions(view->buf->rootChange)};
+
+    for(const auto& [node, pos] : posMap){
+        mvprintw(y+10+node->depth, x-10+pos*2, (isLeaf(node) ? "X" : "O"));
+    }
+    */
 
     refresh();
     wrefresh(window);

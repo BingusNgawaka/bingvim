@@ -2,7 +2,7 @@
 
 namespace config{
 
-#define DEBUG true
+#define DEBUG false
 
 #define tabSize 4
 
