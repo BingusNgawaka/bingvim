@@ -50,7 +50,7 @@ void Editor::renderCurrPane(){
         Vec2<int> offset {2, 2};
         Vec2<float> scale {2, 1};
         for(const auto& [node, pos] : treePositions){
-            mvwprintw(undoTreeWindow, offset.y+node->depth*scale.y, offset.x+pos*scale.x, (isLeaf(node) ? "x" : "o"));
+            mvwprintw(undoTreeWindow, offset.y+node->depth*scale.y, offset.x+pos*scale.x, (node == getCurrBuffer()->lastChange ? "x" : "o"));
         }
 
         wmove(undoTreeWindow, offset.y+selectedNode->depth*scale.y, offset.x+treePositions[selectedNode]*scale.x);
@@ -163,9 +163,9 @@ void Editor::handleUndoTreeInput(int ch){
             // >find list of ancestors for both nodes A and B
             // >make list of common ancestors
             // >find deepest ancestor (LCA)
-            // start at lastChange,
-            //  traverse upwards undoing as we go until we reach LCA
-            //  then start traversing down the other path redoing
+            // >start at lastChange,
+            // > traverse upwards undoing as we go until we reach LCA
+            // > then start traversing down the other path redoing
             
             std::map<BufferChange*, std::vector<BufferChange*>> pathMapA {};
             std::map<BufferChange*, std::vector<BufferChange*>> pathMapB {};
@@ -174,6 +174,10 @@ void Editor::handleUndoTreeInput(int ch){
             auto B {getCurrBuffer()->lastChange};
             auto ancestorsA {getAncestorVecAndPathMap(A, pathMapA)};
             auto ancestorsB {getAncestorVecAndPathMap(B, pathMapB)};
+            ancestorsA.push_back(A);
+            pathMapA[A] = {};
+            ancestorsB.push_back(B);
+            pathMapB[B] = {};
 
 
             std::vector<BufferChange*> commonAncestors {};
@@ -192,8 +196,26 @@ void Editor::handleUndoTreeInput(int ch){
                 }
             }
 
+            // undo path
+            if(pathMapB.at(LCA).size() > 1){
+                getCurrBuffer()->undoGivenChange(getCurrBuffer()->lastChange);
+                for(std::size_t i{1}; i < pathMapB.at(LCA).size() - 1; ++i){ // exclude last node
+                    Vec2<int> v {getCurrBuffer()->undoGivenChange(pathMapB.at(LCA).at(i))};
+                    if(v != Vec2<int>{-1, -1})
+                        wmove(getCurrPane().window, v.y, v.x);
+                }
+            }
+
+            // redo path
+            if(pathMapA.at(LCA).size() > 1){
+                for(auto rit{pathMapA.at(LCA).rbegin()+1}; rit != pathMapA.at(LCA).rend(); ++rit){ // reverse, exclude first node
+                    Vec2<int> v {getCurrBuffer()->redoGivenChange(*rit)};
+                    if(v != Vec2<int>{-1, -1})
+                        wmove(getCurrPane().window, v.y, v.x);
+                }
+            }
         }
-        currMode = Mode::NORMAL;
+        getCurrPane().render();
         return;
     }
 

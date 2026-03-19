@@ -153,7 +153,9 @@ std::vector<BufferChange*> getAncestorVecAndPathMap(BufferChange* node, std::map
         out.push_back(currNode->parent);
         currNode = currNode->parent;
 
-        pathMap[currNode] = out;
+        std::vector<BufferChange*> path {out};
+        path.insert(path.begin(), node);
+        pathMap[currNode] = path;
     }
 
     return out;

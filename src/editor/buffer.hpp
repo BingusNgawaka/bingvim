@@ -18,7 +18,9 @@ struct Buffer{
 
     void redoEdit(Edit& edit);
 
-    Vec2<int> undoLastChange();
+    Vec2<int> undoGivenChange(BufferChange* change);
+    Vec2<int> redoGivenChange(BufferChange* change);
 
+    Vec2<int> undoLastChange();
     Vec2<int> redoLastChange();
 };

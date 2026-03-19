@@ -84,28 +84,36 @@ void Buffer::redoEdit(Edit& edit){
     }
 }
 
-Vec2<int> Buffer::undoLastChange(){
-    if(lastChange != rootChange){
-        Vec2<int> returnCursor {lastChange->startCursorPos};
-        for(auto it{lastChange->edits.rbegin()}; it != lastChange->edits.rend(); ++it){
+Vec2<int> Buffer::undoGivenChange(BufferChange* change){
+    if(change != rootChange){
+        Vec2<int> returnCursor {change->startCursorPos};
+        for(auto it{change->edits.rbegin()}; it != change->edits.rend(); ++it){
             undoEdit(*it);
         }
-        lastChange = lastChange->parent;
+        lastChange = change->parent;
         return returnCursor;
     }
 
     return {-1, -1};
 }
 
-Vec2<int> Buffer::redoLastChange(){
-    if(lastChange->children.size() > 0){
-        lastChange = lastChange->children.back();
-        Vec2<int> returnCursor {lastChange->endCursorPos};
-        for(auto it{lastChange->edits.begin()}; it != lastChange->edits.end(); ++it){
-            redoEdit(*it);
-        }
-        return returnCursor;
+Vec2<int> Buffer::redoGivenChange(BufferChange* change){
+    lastChange = change;
+    Vec2<int> returnCursor {change->endCursorPos};
+    for(auto it{change->edits.begin()}; it != change->edits.end(); ++it){
+        redoEdit(*it);
     }
+    return returnCursor;
+}
+
+// returns cursorPos
+Vec2<int> Buffer::undoLastChange(){
+    return undoGivenChange(lastChange);
+}
+
+Vec2<int> Buffer::redoLastChange(){
+    if(lastChange->children.size() > 0)
+        return redoGivenChange(lastChange->children.back());
 
     return {-1, -1};
 }
