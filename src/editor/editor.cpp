@@ -35,6 +35,10 @@ std::size_t Editor::addPane(std::size_t viewportIndex, Vec2<int> pos, Vec2<int> 
 
     undoTreeWindow = newwin(size.y/scaleFac, size.x/scaleFac, pos.y+offsetFac*size.y, pos.x+offsetFac*size.x);
 
+    scaleFac = 2;
+    offsetFac = ((1 - 1/scaleFac)/2);
+    cmdWindow = newwin(5, size.x/scaleFac, pos.y+(size.y-5)/2, pos.x+offsetFac*size.x);
+
     activePane = panes.size() - 1;
     return activePane;
 }
@@ -43,63 +47,82 @@ Pane& Editor::getCurrPane(){
     return panes.at(activePane);
 }
 
+void Editor::renderUndoTree(){
+    werase(undoTreeWindow);
+
+    int w, h;
+    getmaxyx(undoTreeWindow, h, w);
+
+    Vec2<int> offset {0, 0};
+    Vec2<float> scale {8, 2};
+
+    w /= scale.x;
+    h /= scale.y;
+
+    Vec2<float> scroll;
+    scroll.x = treePositions[selectedNode] - w/2.0;
+    scroll.y = selectedNode->depth - h/2.0;
+
+    for(const auto& [node, pos] : treePositions){
+        float viewPos {pos - scroll.x};
+        float viewDepth {node->depth - scroll.y};
+        if(node != getCurrBuffer()->rootChange){
+            mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y-1, offset.x+viewPos*scale.x, "|");
+        }
+        if(node->children.size() > 1){
+            float max {-1};
+            float min {-1};
+            for(const auto& child : node->children){
+                if((treePositions.at(child) > max) || (max == -1))
+                    max = treePositions.at(child);
+                if((treePositions.at(child) < min) || (min == -1))
+                    min = treePositions.at(child);
+            }
+            for(int i {static_cast<int>((min - scroll.x)*scale.x)}; i < static_cast<int>((max - scroll.x)*scale.x); ++i){
+                mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y, offset.x+i, "-");
+            }
+            for(const auto& child : node->children){
+                mvwprintw(undoTreeWindow, offset.y+(child->depth-scroll.y)*scale.y-2, offset.x+(treePositions.at(child)-scroll.x)*scale.x, ".");
+            }
+        }
+        if(node == getCurrBuffer()->lastChange)
+            wattron(undoTreeWindow, COLOR_PAIR(LASTNODE_COLORPAIR));
+        else if(node == selectedNode)
+            wattron(undoTreeWindow, COLOR_PAIR(SELECTED_COLORPAIR));
+        else
+            wattron(undoTreeWindow, COLOR_PAIR(NODE_COLORPAIR));
+        mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y, offset.x+viewPos*scale.x, (node == getCurrBuffer()->lastChange ? "X" : "o"));
+        if(node == getCurrBuffer()->lastChange)
+            wattroff(undoTreeWindow, COLOR_PAIR(LASTNODE_COLORPAIR));
+        else if(node == selectedNode)
+            wattroff(undoTreeWindow, COLOR_PAIR(SELECTED_COLORPAIR));
+        else
+            wattroff(undoTreeWindow, COLOR_PAIR(NODE_COLORPAIR));
+    }
+
+    wborder(undoTreeWindow, '|', '|', '-', '-', '+', '+', '+', '+');
+
+    mvwprintw(undoTreeWindow, 2, 2, "h/j/k/l - Navigate tree");
+    mvwprintw(undoTreeWindow, 3, 2, " Enter  - Goto selected change");
+
+    wmove(undoTreeWindow, h*scale.y/2, w*scale.x/2);
+    wrefresh(undoTreeWindow);
+}
+
+void Editor::renderCommandLine(){
+    wmove(cmdWindow, 1, 0);
+    wclrtoeol(cmdWindow);
+    wborder(cmdWindow, '|', '|', '-', '-', '+', '+', '+', '+');
+    mvwprintw(cmdWindow, 1, 2, ":%s", currCmd.c_str());
+    wmove(cmdWindow, 1, 2+currCmd.size()+1);
+    wrefresh(cmdWindow);
+}
+
 void Editor::renderCurrPane(){
     if(currMode == Mode::UNDOTREE){
-        werase(undoTreeWindow);
-
-        int w, h;
-        getmaxyx(undoTreeWindow, h, w);
-
-        Vec2<int> offset {0, 0};
-        Vec2<float> scale {8, 2};
-
-        w /= scale.x;
-        h /= scale.y;
-
-        Vec2<float> scroll;
-        scroll.x = treePositions[selectedNode] - w/2.0;
-        scroll.y = selectedNode->depth - h/2.0;
-
-        for(const auto& [node, pos] : treePositions){
-            float viewPos {pos - scroll.x};
-            float viewDepth {node->depth - scroll.y};
-            if(node != getCurrBuffer()->rootChange){
-                mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y-1, offset.x+viewPos*scale.x, "|");
-            }
-            if(node->children.size() > 1){
-                float max {-1};
-                float min {-1};
-                for(const auto& child : node->children){
-                    if((treePositions.at(child) > max) || (max == -1))
-                        max = treePositions.at(child);
-                    if((treePositions.at(child) < min) || (min == -1))
-                        min = treePositions.at(child);
-                }
-                for(int i {static_cast<int>((min - scroll.x)*scale.x)}; i < static_cast<int>((max - scroll.x)*scale.x); ++i){
-                    mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y, offset.x+i, "-");
-                }
-                for(const auto& child : node->children){
-                    mvwprintw(undoTreeWindow, offset.y+(child->depth-scroll.y)*scale.y-2, offset.x+(treePositions.at(child)-scroll.x)*scale.x, ".");
-                }
-            }
-            if(node == getCurrBuffer()->lastChange)
-                wattron(undoTreeWindow, COLOR_PAIR(LASTNODE_COLORPAIR));
-            else if(node == selectedNode)
-                wattron(undoTreeWindow, COLOR_PAIR(SELECTED_COLORPAIR));
-            else
-                wattron(undoTreeWindow, COLOR_PAIR(NODE_COLORPAIR));
-            mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y, offset.x+viewPos*scale.x, (node == getCurrBuffer()->lastChange ? "X" : "o"));
-            if(node == getCurrBuffer()->lastChange)
-                wattroff(undoTreeWindow, COLOR_PAIR(LASTNODE_COLORPAIR));
-            else if(node == selectedNode)
-                wattroff(undoTreeWindow, COLOR_PAIR(SELECTED_COLORPAIR));
-            else
-                wattroff(undoTreeWindow, COLOR_PAIR(NODE_COLORPAIR));
-        }
-
-        wborder(undoTreeWindow, '|', '|', '-', '-', '+', '+', '+', '+');
-        wmove(undoTreeWindow, h*scale.y/2, w*scale.x/2);
-        wrefresh(undoTreeWindow);
+        renderUndoTree();
+    }else if(currMode == Mode::COMMAND){
+        renderCommandLine();
     }else{
         getCurrPane().render();
     }
@@ -352,6 +375,10 @@ void Editor::handleNormalModeInput(int ch){
             getCurrViewport()->setCursor(undoVec);
     }
 
+    if(ch == ':'){
+        currMode = Mode::COMMAND;
+    }
+
     if(ch == 'U'){
         selectedNode = getCurrBuffer()->lastChange;
         treePositions = getTreePosiions(getCurrBuffer()->rootChange);
@@ -581,6 +608,46 @@ void Editor::handleInsertModeInput(int ch){
         handleEnterLogic();
     }
 }
+
+void Editor::handleCommandInput(int ch){
+    int w {getmaxx(cmdWindow)};
+    if(ch >= 0 && ch <= 255 && std::isprint(ch) && currCmd.size() < w - 6){
+        currCmd.append(std::string(1, ch));
+    }
+
+    if(ch == KEY_BACKSPACE && currCmd.size() > 0){
+        currCmd.pop_back();
+    }
+
+    if(ch == KEY_ESCAPE){
+        currCmd.clear();
+        currMode = Mode::NORMAL;
+    }
+
+    if(ch == 10){ // ENTER
+        wmove(cmdWindow, 3, 0);
+        wclrtoeol(cmdWindow);
+        if(currCmd == "w" || currCmd == "W" || currCmd == "write"){
+            writeFile(getCurrBuffer()->lines, getCurrBuffer()->filepath);
+            wmove(cmdWindow, 3, 3);
+            wprintw(cmdWindow, "File written to '%s' :3", getCurrBuffer()->filepath.c_str());
+        }
+        else if(currCmd == "q" || currCmd == "Q" || currCmd == "quit"){
+            running = false;
+        }
+        else if(currCmd == "wq"){
+            writeFile(getCurrBuffer()->lines, getCurrBuffer()->filepath);
+            running = false;
+        }
+        else{
+            wmove(cmdWindow, 3, 3);
+            wprintw(cmdWindow, "Invalid command '%s' :(", currCmd.c_str());
+        }
+
+        currCmd.clear();
+    }
+}
+
 void Editor::handleInput(int ch){
     switch(currMode){
         case NORMAL:
@@ -590,8 +657,10 @@ void Editor::handleInput(int ch){
             handleInsertModeInput(ch);
             break;
         case COMMAND:
+            handleCommandInput(ch);
             break;
         case UNDOTREE:
             handleUndoTreeInput(ch);
+            break;
     }
 }

@@ -1,6 +1,8 @@
 #include "game.h"
 #include <algorithm>
+
 #include <memory>
+
 #include <raylib.h>
 
 // math funcs

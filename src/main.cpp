@@ -26,7 +26,7 @@ int main(int argc, char** argv){
     init_pair(NODE_COLORPAIR, 105, COLOR_BLACK);
     init_pair(LASTNODE_COLORPAIR, 220, COLOR_BLACK);
 
-    Vec2<int> terminalSize {getTerminalSize() - Vec2<int>{4,4}};
+    Vec2<int> terminalSize {getTerminalSize()};
 
     Editor editor {};
 
@@ -35,7 +35,7 @@ int main(int argc, char** argv){
         std::string openingFilepath {argv[1]};
         std::size_t bufIndex {editor.addBuffer(readFile(openingFilepath), openingFilepath)};
         std::size_t viewportIndex {editor.addViewport(bufIndex)};
-        editor.addPane(viewportIndex, {2,2}, terminalSize);
+        editor.addPane(viewportIndex, {0,0}, terminalSize);
     }else{
         return -1;
     }
@@ -44,7 +44,8 @@ int main(int argc, char** argv){
     editor.getCurrPane().render();
 
     int ch;
-    while((ch = getch()) != KEY_F(1)){
+    while(editor.running){
+        ch = getch();
         editor.handleInput(ch);
         editor.renderCurrPane();
     }

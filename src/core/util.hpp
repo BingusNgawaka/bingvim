@@ -9,6 +9,7 @@
 #define CTRL(x) ((x) & 0x1f)
 #define SHIFT(x) (x - 32)
 
+void writeFile(std::vector<std::string> lines, std::string filepath);
 std::vector<std::string> readFile(std::string filepath);
 Vec2<int> getTerminalSize();
 int countIndentation(std::string& str);

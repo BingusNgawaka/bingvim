@@ -13,6 +13,10 @@ struct Editor{
     std::vector<Pane> panes {};
 
     void renderCurrPane();
+    void renderUndoTree();
+    void renderCommandLine();
+
+    bool running {true};
 
     // getters
     Buffer* getCurrBuffer();
@@ -36,6 +40,10 @@ struct Editor{
     Vec2<int> firstCursorPos {};
     std::vector<Edit> stagedEdits {};
 
+    // command stuff
+    WINDOW* cmdWindow;
+    std::string currCmd {};
+
     void startChange();
     void commitChange();
 
@@ -43,6 +51,7 @@ struct Editor{
     void handleBackspaceLogic();
     void handleEnterLogic();
     void handleInput(int ch);
+    void handleCommandInput(int ch);
 
     void handleNormalModeInput(int ch);
     void handleInsertModeInput(int ch);

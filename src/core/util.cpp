@@ -39,20 +39,16 @@ int countIndentation(std::string& str){
     
     return count + (tabSize - diff);
 }
-/*
-void write_file(std::vector<std::vector<char>> lines, std::string filepath){
+void writeFile(std::vector<std::string> lines, std::string filepath){
     std::ofstream file(filepath, std::ios::trunc);
 
     for(const auto& line : lines){
-        for(const auto& c : line){
-            file << c;
-        }
+        file << line;
         file << "\n";
     }
 
     file.close();
 }
-*/
 
 std::string editTypeToStr(Edit& edit){
     switch(edit.type){
