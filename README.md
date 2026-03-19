@@ -71,10 +71,7 @@ Open a file to edit:
 | `Ctrl + r` | Redo change |
 | `o` | Insert line *below* and enter insert mode |
 | `O` | Insert line *above* and enter insert mode |
->| `U` | Enter Undo Tree navigator |
->| `w` | Jump to next word |
->| `b` | Jump to previous word |
->| `e` | Jump to end of word |
+| `U` | Enter Undo Tree navigator |
 >| `dd` | Delete current line |
 >| `:` | Enter command mode |
 
@@ -93,17 +90,17 @@ Open a file to edit:
 
 | Key | Action |
 |----|----|
-| `h` | Go to parent node |
-| `l` | Go to child node |
-| `j+k` | Cycle through branches |
+| `k` | Go to parent node |
+| `j` | Go to child node |
+| `h+l` | Cycle through branches |
 | `Enter` | Jump to selected change |
-| `q` | Return to normal mode |
+| `Esc` | Return to normal mode |
 
 ### Command Mode
 
 | Command | Action |
 |----|----|
-| `w / write` | Write changes to file |
+| `w` | Write changes to file |
 | `wq` | Write changes to file and quit |
 | `q` | Exit editor |
 
