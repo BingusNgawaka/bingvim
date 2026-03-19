@@ -627,6 +627,7 @@ void Editor::handleCommandInput(int ch){
     if(ch == 10){ // ENTER
         wmove(cmdWindow, 3, 0);
         wclrtoeol(cmdWindow);
+
         if(currCmd == "w" || currCmd == "W" || currCmd == "write"){
             writeFile(getCurrBuffer()->lines, getCurrBuffer()->filepath);
             wmove(cmdWindow, 3, 3);

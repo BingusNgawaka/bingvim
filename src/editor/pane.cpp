@@ -109,7 +109,7 @@ void Pane::render(){
     int maximumVisibleRowCount {std::min(view->size.y, static_cast<int>(view->buf->lines.size()) - (view->scrollPos.y))};
     std::regex keywordRegex("(\\b(and|bool|bitor|bitand|break|case|catch|char|char16_t|char32_t|class|concept|const|constexpr|continue|default|delete|do|double|static_cast|else|enum|export|false|float|for|friend|if|goto|import|inline|int|long|module|namespace|new|not|nullptr|operator|or|private|protected|public|register|return|short|signed|sizeof|static|static_cast|struct|switch|template|this|throw|true|try|typedef|typeid|union|unsigned|using|virtual|void|volatile|while|xor)\\b)|((\\#define|\\#include)\\b)"); // matches keywords TODO turn into a vector to easily add more this is terrible lol
     std::regex numberRegex("\\b(?:\\d+\\.\\d+f|\\d+\\.\\d+|\\d+|\\.\\d+f*)\\b"); // matches nums
-    std::regex stringRegex("([\"].*?[\"])|([<].*?[>])"); // matches string and <>
+    std::regex stringRegex("([\"].*?[\"])|([\'].*?[\'])"); // matches string and <>
     std::regex funcRegex("\\b([A-Za-z_]\\w*)\\s*\\(");
     std::regex varRegex("\\.([A-Za-z_]\\w*)");
     std::regex commentRegex("//.*"); // matches singleline comments
