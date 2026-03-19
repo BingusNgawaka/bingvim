@@ -22,6 +22,10 @@ int main(int argc, char** argv){
     init_pair(VARIABLE_COLORPAIR, 105, BG_COLOR);
     init_pair(CLASS_COLORPAIR, 221, BG_COLOR);
 
+    init_pair(SELECTED_COLORPAIR, 117, COLOR_BLACK);
+    init_pair(NODE_COLORPAIR, 105, COLOR_BLACK);
+    init_pair(LASTNODE_COLORPAIR, 220, COLOR_BLACK);
+
     Vec2<int> terminalSize {getTerminalSize() - Vec2<int>{4,4}};
 
     Editor editor {};

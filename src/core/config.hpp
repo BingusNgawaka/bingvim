@@ -16,6 +16,10 @@ namespace config{
 #define VARIABLE_COLORPAIR 7
 #define CLASS_COLORPAIR 8
 
+#define LASTNODE_COLORPAIR 10
+#define SELECTED_COLORPAIR 11
+#define NODE_COLORPAIR 12
+
 #define BG_COLOR 235
 
 #define SCROLL_BUFFER_Y 8

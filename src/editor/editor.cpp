@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <iostream>
 #include <ncurses.h>
+#include <string>
 #include "../core/config.hpp"
 #include "../core/util.hpp"
 
@@ -45,15 +46,59 @@ Pane& Editor::getCurrPane(){
 void Editor::renderCurrPane(){
     if(currMode == Mode::UNDOTREE){
         werase(undoTreeWindow);
-        wborder(undoTreeWindow, '|', '|', '-', '-', '+', '+', '+', '+');
 
-        Vec2<int> offset {2, 2};
-        Vec2<float> scale {2, 1};
+        int w, h;
+        getmaxyx(undoTreeWindow, h, w);
+
+        Vec2<int> offset {0, 0};
+        Vec2<float> scale {8, 2};
+
+        w /= scale.x;
+        h /= scale.y;
+
+        Vec2<float> scroll;
+        scroll.x = treePositions[selectedNode] - w/2.0;
+        scroll.y = selectedNode->depth - h/2.0;
+
         for(const auto& [node, pos] : treePositions){
-            mvwprintw(undoTreeWindow, offset.y+node->depth*scale.y, offset.x+pos*scale.x, (node == getCurrBuffer()->lastChange ? "x" : "o"));
+            float viewPos {pos - scroll.x};
+            float viewDepth {node->depth - scroll.y};
+            if(node != getCurrBuffer()->rootChange){
+                mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y-1, offset.x+viewPos*scale.x, "|");
+            }
+            if(node->children.size() > 1){
+                float max {-1};
+                float min {-1};
+                for(const auto& child : node->children){
+                    if((treePositions.at(child) > max) || (max == -1))
+                        max = treePositions.at(child);
+                    if((treePositions.at(child) < min) || (min == -1))
+                        min = treePositions.at(child);
+                }
+                for(int i {static_cast<int>((min - scroll.x)*scale.x)}; i < static_cast<int>((max - scroll.x)*scale.x); ++i){
+                    mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y, offset.x+i, "-");
+                }
+                for(const auto& child : node->children){
+                    mvwprintw(undoTreeWindow, offset.y+(child->depth-scroll.y)*scale.y-2, offset.x+(treePositions.at(child)-scroll.x)*scale.x, ".");
+                }
+            }
+            if(node == getCurrBuffer()->lastChange)
+                wattron(undoTreeWindow, COLOR_PAIR(LASTNODE_COLORPAIR));
+            else if(node == selectedNode)
+                wattron(undoTreeWindow, COLOR_PAIR(SELECTED_COLORPAIR));
+            else
+                wattron(undoTreeWindow, COLOR_PAIR(NODE_COLORPAIR));
+            mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y, offset.x+viewPos*scale.x, (node == getCurrBuffer()->lastChange ? "X" : "o"));
+            if(node == getCurrBuffer()->lastChange)
+                wattroff(undoTreeWindow, COLOR_PAIR(LASTNODE_COLORPAIR));
+            else if(node == selectedNode)
+                wattroff(undoTreeWindow, COLOR_PAIR(SELECTED_COLORPAIR));
+            else
+                wattroff(undoTreeWindow, COLOR_PAIR(NODE_COLORPAIR));
         }
 
-        wmove(undoTreeWindow, offset.y+selectedNode->depth*scale.y, offset.x+treePositions[selectedNode]*scale.x);
+        wborder(undoTreeWindow, '|', '|', '-', '-', '+', '+', '+', '+');
+        wmove(undoTreeWindow, h*scale.y/2, w*scale.x/2);
         wrefresh(undoTreeWindow);
     }else{
         getCurrPane().render();
