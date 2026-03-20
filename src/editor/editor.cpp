@@ -66,23 +66,23 @@ void Editor::renderUndoTree(){
     for(const auto& [node, pos] : treePositions){
         float viewPos {pos - scroll.x};
         float viewDepth {node->depth - scroll.y};
-        if(node != getCurrBuffer()->rootChange){
+        if(node != getCurrBuffer()->rootChange.get()){
             mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y-1, offset.x+viewPos*scale.x, "|");
         }
         if(node->children.size() > 1){
             float max {-1};
             float min {-1};
             for(const auto& child : node->children){
-                if((treePositions.at(child) > max) || (max == -1))
-                    max = treePositions.at(child);
-                if((treePositions.at(child) < min) || (min == -1))
-                    min = treePositions.at(child);
+                if((treePositions.at(child.get()) > max) || (max == -1))
+                    max = treePositions.at(child.get());
+                if((treePositions.at(child.get()) < min) || (min == -1))
+                    min = treePositions.at(child.get());
             }
             for(int i {static_cast<int>((min - scroll.x)*scale.x)}; i < static_cast<int>((max - scroll.x)*scale.x); ++i){
                 mvwprintw(undoTreeWindow, offset.y+viewDepth*scale.y, offset.x+i, "-");
             }
             for(const auto& child : node->children){
-                mvwprintw(undoTreeWindow, offset.y+(child->depth-scroll.y)*scale.y-2, offset.x+(treePositions.at(child)-scroll.x)*scale.x, ".");
+                mvwprintw(undoTreeWindow, offset.y+(child->depth-scroll.y)*scale.y-2, offset.x+(treePositions.at(child.get())-scroll.x)*scale.x, ".");
             }
         }
         if(node == getCurrBuffer()->lastChange)
@@ -243,9 +243,9 @@ void Editor::handleUndoTreeInput(int ch){
             auto ancestorsA {getAncestorVecAndPathMap(A, pathMapA)};
             auto ancestorsB {getAncestorVecAndPathMap(B, pathMapB)};
             ancestorsA.push_back(A);
-            pathMapA[A] = {};
+            pathMapA[A] = {A};
             ancestorsB.push_back(B);
-            pathMapB[B] = {};
+            pathMapB[B] = {B};
 
 
             std::vector<BufferChange*> commonAncestors {};
@@ -288,7 +288,7 @@ void Editor::handleUndoTreeInput(int ch){
     }
 
     if(ch == 'h'){
-        auto depthMap {getDepthMap(getCurrBuffer()->rootChange)};
+        auto depthMap {getDepthMap(getCurrBuffer()->rootChange.get())};
         std::vector<BufferChange*> inlineNodes {depthMap.at(selectedNode->depth)};
 
         float maxPos {-1};
@@ -306,7 +306,7 @@ void Editor::handleUndoTreeInput(int ch){
         }
     }
     if(ch == 'l'){
-        auto depthMap {getDepthMap(getCurrBuffer()->rootChange)};
+        auto depthMap {getDepthMap(getCurrBuffer()->rootChange.get())};
         std::vector<BufferChange*> inlineNodes {depthMap.at(selectedNode->depth)};
 
         float minPos {-1};
@@ -326,7 +326,7 @@ void Editor::handleUndoTreeInput(int ch){
 
     if(ch == 'j'){
         if(selectedNode->children.size() > 0)
-            selectedNode = selectedNode->children.back();
+            selectedNode = selectedNode->children.back().get();
     }
     if(ch == 'k'){
         if(selectedNode->parent != nullptr)
@@ -381,7 +381,7 @@ void Editor::handleNormalModeInput(int ch){
 
     if(ch == 'U'){
         selectedNode = getCurrBuffer()->lastChange;
-        treePositions = getTreePosiions(getCurrBuffer()->rootChange);
+        treePositions = getTreePositions(getCurrBuffer()->rootChange.get());
         currMode = Mode::UNDOTREE;
     }
 

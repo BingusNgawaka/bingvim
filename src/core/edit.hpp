@@ -2,6 +2,7 @@
 
 #include "types.hpp"
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -29,7 +30,7 @@ struct BufferChange{
     std::vector<Edit> edits;
 
     BufferChange* parent;
-    std::vector<BufferChange*> children;
+    std::vector<std::unique_ptr<BufferChange>> children;
 };
 
 void updateDepthMap(BufferChange* node, std::map<int, std::vector<BufferChange*>>& depthMap, int& currDepth);
@@ -37,4 +38,4 @@ std::map<int, std::vector<BufferChange*>> getDepthMap(BufferChange* root);
 
 bool isLeaf(BufferChange* node);
 float getNodePosition(BufferChange* node, int& leafCount, std::map<BufferChange*, float>& posMap);
-std::map<BufferChange*, float> getTreePosiions(BufferChange* root);
+std::map<BufferChange*, float> getTreePositions(BufferChange* root);

@@ -1,6 +1,7 @@
 #include "buffer.hpp"
 #include "../core/util.hpp"
 #include "../core/config.hpp"
+#include <memory>
 #include <ncurses.h>
 #include <stdexcept>
 
@@ -8,13 +9,18 @@ Buffer::Buffer(std::vector<std::string> lines, std::string filepath):
     lines(lines),
     filepath(filepath),
     modified(false),
-    rootChange(new BufferChange{{0, 0}, {0,0}, 0, {}, nullptr, {}}),
-    lastChange(rootChange){}
+    rootChange(std::make_unique<BufferChange>(
+        Vec2<int>{0, 0}, Vec2<int>{0,0}, 0, std::vector<Edit>{}, nullptr, std::vector<std::unique_ptr<BufferChange>>{}
+    )),
+    lastChange(rootChange.get()){}
 
 void Buffer::addChange(Vec2<int>& startCursorPos, Vec2<int>& endCursorPos, std::vector<Edit>& edits){
-    BufferChange* change {new BufferChange{startCursorPos, endCursorPos, lastChange->depth+1, edits, lastChange, {}}};
-    lastChange->children.push_back(change);
-    lastChange = change;
+    auto change = std::make_unique<BufferChange>(
+        startCursorPos, endCursorPos, lastChange->depth + 1, edits, lastChange, 
+        std::vector<std::unique_ptr<BufferChange>>{}
+    );
+    lastChange->children.push_back(std::move(change));
+    lastChange = lastChange->children.back().get();
 }
 
 void Buffer::undoEdit(Edit& edit){
@@ -85,7 +91,7 @@ void Buffer::redoEdit(Edit& edit){
 }
 
 Vec2<int> Buffer::undoGivenChange(BufferChange* change){
-    if(change != rootChange){
+    if(change != rootChange.get()){
         Vec2<int> returnCursor {change->startCursorPos};
         for(auto it{change->edits.rbegin()}; it != change->edits.rend(); ++it){
             undoEdit(*it);
@@ -113,7 +119,7 @@ Vec2<int> Buffer::undoLastChange(){
 
 Vec2<int> Buffer::redoLastChange(){
     if(lastChange->children.size() > 0)
-        return redoGivenChange(lastChange->children.back());
+        return redoGivenChange(lastChange->children.back().get());
 
     return {-1, -1};
 }

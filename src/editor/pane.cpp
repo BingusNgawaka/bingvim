@@ -107,13 +107,13 @@ void Pane::render(){
     wbkgd(window, COLOR_PAIR(1));
 
     int maximumVisibleRowCount {std::min(view->size.y, static_cast<int>(view->buf->lines.size()) - (view->scrollPos.y))};
-    std::regex keywordRegex("(\\b(and|bool|bitor|bitand|break|case|catch|char|char16_t|char32_t|class|concept|const|constexpr|continue|default|delete|do|double|static_cast|else|enum|export|false|float|for|friend|if|goto|import|inline|int|long|module|namespace|new|not|nullptr|operator|or|private|protected|public|register|return|short|signed|sizeof|static|static_cast|struct|switch|template|this|throw|true|try|typedef|typeid|union|unsigned|using|virtual|void|volatile|while|xor)\\b)|((\\#define|\\#include)\\b)"); // matches keywords TODO turn into a vector to easily add more this is terrible lol
-    std::regex numberRegex("\\b(?:\\d+\\.\\d+f|\\d+\\.\\d+|\\d+|\\.\\d+f*)\\b"); // matches nums
-    std::regex stringRegex("([\"].*?[\"])|([\'].*?[\'])"); // matches string and <>
-    std::regex funcRegex("\\b([A-Za-z_]\\w*)\\s*\\(");
-    std::regex varRegex("\\.([A-Za-z_]\\w*)");
-    std::regex commentRegex("//.*"); // matches singleline comments
-    std::regex classRegex("\\b([A-Za-z_]\\w*)(?=::)"); // matches any word before a ::
+    static std::regex keywordRegex("(\\b(and|bool|bitor|bitand|break|case|catch|char|char16_t|char32_t|class|concept|const|constexpr|continue|default|delete|do|double|static_cast|else|enum|export|false|float|for|friend|if|goto|import|inline|int|long|module|namespace|new|not|nullptr|operator|or|private|protected|public|register|return|short|signed|sizeof|static|static_cast|struct|switch|template|this|throw|true|try|typedef|typeid|union|unsigned|using|virtual|void|volatile|while|xor)\\b)|((\\#define|\\#include)\\b)"); // matches keywords TODO turn into a vector to easily add more this is terrible lol
+    static std::regex numberRegex("\\b(?:\\d+\\.\\d+f|\\d+\\.\\d+|\\d+|\\.\\d+f*)\\b"); // matches nums
+    static std::regex stringRegex("([\"].*?[\"])|([\'].*?[\'])"); // matches string and <>
+    static std::regex funcRegex("\\b([A-Za-z_]\\w*)\\s*\\(");
+    static std::regex varRegex("\\.([A-Za-z_]\\w*)");
+    static std::regex commentRegex("//.*"); // matches singleline comments
+    static std::regex classRegex("\\b([A-Za-z_]\\w*)(?=::)"); // matches any word before a ::
 
     for(int row{}; row < maximumVisibleRowCount; ++row){
         colorMap.clear();
@@ -122,13 +122,8 @@ void Pane::render(){
         wclrtoeol(window);
 
         // print line num
-        int digitCount {};
         int lineNum {row+view->scrollPos.y + 1};
-        int num {lineNum};
-        while(num >= 10){
-            num /= 10;
-            ++digitCount;
-        }
+        int digitCount {static_cast<int>(std::to_string(lineNum).size())};
         wattron(window, COLOR_PAIR(COMMENT_COLORPAIR));
         mvwprintw(window, row, LINENUM_BUFFER - 2 - digitCount, "%d", lineNum);
         wattroff(window, COLOR_PAIR(COMMENT_COLORPAIR));
@@ -146,9 +141,10 @@ void Pane::render(){
             checkAndSetRegexAgainstLine(absRow, commentRegex, SyntaxGroup::COMMENT);
             //
             for(Vec2<int> pos{0, row}; static_cast<std::size_t>(pos.x) < line.size(); ++pos.x){
-                wattron(window, COLOR_PAIR(getColorGroup(pos+view->scrollPos)));
+                int colorGroup {getColorGroup(pos+view->scrollPos)};
+                wattron(window, COLOR_PAIR(colorGroup));
                 mvwprintw(window, pos.y, pos.x+LINENUM_BUFFER , "%c", line.at(static_cast<std::size_t>(pos.x)));
-                wattroff(window, COLOR_PAIR(getColorGroup(pos+view->scrollPos)));
+                wattroff(window, COLOR_PAIR(colorGroup));
             }
         }
     }

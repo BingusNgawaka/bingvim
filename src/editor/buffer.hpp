@@ -7,7 +7,7 @@ struct Buffer{
     std::string filepath;
 
     bool modified;
-    BufferChange* rootChange;
+    std::unique_ptr<BufferChange> rootChange;
     BufferChange* lastChange;
 
     Buffer(std::vector<std::string> lines, std::string filepath);

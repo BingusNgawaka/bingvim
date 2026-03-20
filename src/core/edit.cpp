@@ -6,8 +6,8 @@ void updateDepthMap(BufferChange* node, std::map<int, std::vector<BufferChange*>
         depthMap.at(currDepth).push_back(node);
     else
         depthMap[currDepth] = {node};
-    for(BufferChange* child : node->children){
-        updateDepthMap(child, depthMap, currDepth+1);
+    for(auto& child : node->children){
+        updateDepthMap(child.get(), depthMap, currDepth+1);
     }
 }
 
@@ -17,8 +17,8 @@ std::map<int, std::vector<BufferChange*>> getDepthMap(BufferChange* root){
     };
     int currDepth {0};
 
-    for(BufferChange* child : root->children){
-        updateDepthMap(child, depthMap, currDepth+1);
+    for(auto& child : root->children){
+        updateDepthMap(child.get(), depthMap, currDepth+1);
     }
 
     return depthMap;
@@ -37,7 +37,7 @@ float getNodePosition(BufferChange* node, int& leafCount, std::map<BufferChange*
     float pos {};
     float count {};
     for(const auto& child : node->children){
-        pos += getNodePosition(child, leafCount, posMap);
+        pos += getNodePosition(child.get(), leafCount, posMap);
         ++count;
     }
 
@@ -46,7 +46,7 @@ float getNodePosition(BufferChange* node, int& leafCount, std::map<BufferChange*
     return pos/count;
 }
 
-std::map<BufferChange*, float> getTreePosiions(BufferChange* root){
+std::map<BufferChange*, float> getTreePositions(BufferChange* root){
     int leafCount {};
     std::map<BufferChange*, float> posMap {};
 
