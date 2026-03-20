@@ -92,6 +92,7 @@ Vec2 Vec2::normalize() const{
 }
 
 bool Vec2::isZero() const{
+    std::cout << "is def zero" << std::endl;
     return (x==0 && y==0);
 }
 
