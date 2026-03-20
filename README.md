@@ -1,11 +1,13 @@
-# BingVim
 <div align="center">
     <img src="assets/icon.png" alt="demo" />
-    ![C++](https://img.shields.io/badge/C++-00599C?style=flat&logo=cplusplus&logoColor=white)
-    ![CMake](https://img.shields.io/badge/CMake-064F8C?style=flat&logo=cmake&logoColor=white)
-    ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
-    A minimal modal TUI text editor written in C++ using ncurses.
 </div>
+# BingVim
+
+![C++](https://img.shields.io/badge/C++-00599C?style=flat&logo=cplusplus&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-064F8C?style=flat&logo=cmake&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
+
+A minimal modal TUI text editor written in C++ using ncurses.
 
 BingVim is a lightweight text editor inspired by Vim, featuring the core modal editing concepts i.e. different modes for editing text, navigation, and selection.
 The goal was to explore the data structures underlying a more fully featured text editor and to learn the ncurses library for my future C++ TUI endeavours.
