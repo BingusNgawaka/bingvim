@@ -1,5 +1,11 @@
 # BingVim
-A minimal modal CLI text editor written in C++ using ncurses.
+html<div align="center">
+    <img src="assets/icon.png" alt="demo" />
+    ![C++](https://img.shields.io/badge/C++-00599C?style=flat&logo=cplusplus&logoColor=white)
+    ![CMake](https://img.shields.io/badge/CMake-064F8C?style=flat&logo=cmake&logoColor=white)
+    ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
+    A minimal modal TUI text editor written in C++ using ncurses.
+</div>
 
 BingVim is a lightweight text editor inspired by Vim, featuring the core modal editing concepts i.e. different modes for editing text, navigation, and selection.
 The goal was to explore the data structures underlying a more fully featured text editor and to learn the ncurses library for my future C++ TUI endeavours.
@@ -7,7 +13,6 @@ The goal was to explore the data structures underlying a more fully featured tex
 ---
 
 ## Demo
-// insert demo gif here
 
 ---
 
@@ -115,16 +120,27 @@ As such, I wanted to explore the fundamental systems behind a text editor like v
 - Syntax highlighting
 - Smart indentation
 
-To demistify this blackbox, I built this minimal modal editor in C++ using the ncurses library for terminal input and graphics.
+To demystify this blackbox, I built this minimal modal editor in C++ using the ncurses library for terminal input and graphics.
 
-### Goals
-- Implement a modal editing workflow that mimics that of vim
-- Build a text buffer that keeps track of fundamental edit operations
-- Implement an Undo Tree that allows navigation of multiple branching edit paths (I personally don't really use branching undos but I thought it a cool feature to add regardless)
-- Manage viewport that allows horizontal and vertical scrolling
-- Render our TUI using ncurses
-- Implement regex based syntax highlighting
-- Explore different architectures for editor design
+---
+
+## Goals
+- Implemented a vector-of-strings text buffer with four primitive edit operations (insert, delete, split line, join line)
+- Built an n-ary undo tree where each node stores a committed sequence of primitive operations, enabling multiple branching edit histories
+- Implemented LCA (Lowest Common Ancestor) traversal for jumping between arbitrary nodes in the undo tree and reconciling different edit histories
+- Managed a viewport with configurable scroll buffers for both horizontal and vertical scrolling along with quality of life features like sticky column
+- Rendered the TUI using ncurses
+- Implemented regex-based syntax highlighting across several token categories
+
+---
+
+## Future Work
+- Piece table or gap buffer - currently, the buffer holds the file as a vector of strings representing each line. While allowing for simple and easy manipulation, it can cause slowdowns with large data. Using a more advanced data structure could circumvent this
+- Visual select mode - yanking, cutting, and pasting are something I use very frequently and is probably the most glaring missing feature from BingVim
+- Word motions - w/e/b shortcuts for navigating by words, with logic that mimics vim
+- Search - f/F/t/T for inline searching and '/' for file pattern matching
+- Multiple buffers and split panes - A big feature of normal vim and with the groundwork layed with separated buffers, viewports, and panes the work should be relatively easy
+- Netrw - a way to change the file you are editing within the editor and traverse directories would be nice to have aswell
 
 ---
 

@@ -61,7 +61,12 @@ Vector2 Vec2::rl() const{
 // used for sorting, less than comparison operator
 // returns bool(x < other.x) or (y < other.y) if x == other.x
 bool Vec2::operator<(const Vec2& other) const{
-    return (x < other.x) || (x == other.x && y < other.y);
+    std::cout << other.x << "\n";
+    if(other.x == x){
+        std::cout << "vector xs are equal" << std::endl;
+        
+    }
+    return (x < other.x) || (x == other.x && y < other.y); 
 }
 
 bool Vec2::operator==(const Vec2& other) const{
