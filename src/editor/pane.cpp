@@ -1,5 +1,6 @@
 #include "pane.hpp"
 #include "../core/config.hpp"
+#include <ncurses.h>
 
 Pane::Pane(Viewport* view, WINDOW* window):
     view(view), window(window){}
@@ -26,7 +27,7 @@ Vec2<int> Pane::getPos(){
 void Pane::moveCursorToViewPos(){
     Vec2<int> viewPos {view->absolutePos - view->scrollPos};
     wmove(window, viewPos.y, viewPos.x + LINENUM_BUFFER);
-    wrefresh(window);
+    wnoutrefresh(window);
 }
 
 void Pane::checkAndSetRegexAgainstLine(std::size_t row, std::regex reg, SyntaxGroup group){
@@ -140,11 +141,23 @@ void Pane::render(){
             checkAndSetRegexAgainstLine(absRow, stringRegex, SyntaxGroup::STRING);
             checkAndSetRegexAgainstLine(absRow, commentRegex, SyntaxGroup::COMMENT);
             //
-            for(Vec2<int> pos{0, row}; static_cast<std::size_t>(pos.x) < line.size(); ++pos.x){
-                int colorGroup {getColorGroup(pos+view->scrollPos)};
+            int startX {0};
+            while(startX < static_cast<int>(line.size())){
+                int colorGroup {getColorGroup({startX + view->scrollPos.x, row + view->scrollPos.y})};
+                int endX {startX};
+
+                // extend run as long as color group stays the same
+                while(endX < static_cast<int>(line.size()) && 
+                      getColorGroup({endX + view->scrollPos.x, row + view->scrollPos.y}) == colorGroup){
+                    ++endX;
+                }
+
+                std::string segment {line.substr(startX, endX - startX)};
                 wattron(window, COLOR_PAIR(colorGroup));
-                mvwprintw(window, pos.y, pos.x+LINENUM_BUFFER , "%c", line.at(static_cast<std::size_t>(pos.x)));
+                mvwprintw(window, row, startX + LINENUM_BUFFER, "%s", segment.c_str());
                 wattroff(window, COLOR_PAIR(colorGroup));
+
+                startX = endX;
             }
         }
     }

@@ -42,6 +42,7 @@ int main(int argc, char** argv){
 
     refresh();
     editor.getCurrPane().render();
+    doupdate();
 
     int ch;
     while(editor.running){

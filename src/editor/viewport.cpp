@@ -56,3 +56,19 @@ void Viewport::setCursor(Vec2<int> pos, Mode mode){
     moveCursor(pos - absolutePos, mode);
     desiredCol = absolutePos.x;
 }
+
+void Viewport::scrollHalfPage(int direction){
+    int halfPage {size.y / 2};
+    int delta {halfPage * direction};
+
+    int maxScroll {std::max(0, static_cast<int>(buf->lines.size()) - size.y)};
+
+    scrollPos.y = std::clamp(scrollPos.y + delta, 0, maxScroll);
+    absolutePos.y = std::clamp(absolutePos.y + delta, 0, static_cast<int>(buf->lines.size()) - 1);
+
+    int furthestX {std::max(0, static_cast<int>(getCurrLine().size()) - 1)};
+    absolutePos.x = std::clamp(absolutePos.x, 0, furthestX);
+    desiredCol = absolutePos.x;
+
+    moveCursor({0,0});
+}

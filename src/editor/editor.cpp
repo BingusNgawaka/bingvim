@@ -106,7 +106,7 @@ void Editor::renderUndoTree(){
     mvwprintw(undoTreeWindow, 3, 2, " Enter  - Goto selected change");
 
     wmove(undoTreeWindow, h*scale.y/2, w*scale.x/2);
-    wrefresh(undoTreeWindow);
+    wnoutrefresh(undoTreeWindow);
 }
 
 void Editor::renderCommandLine(){
@@ -115,7 +115,7 @@ void Editor::renderCommandLine(){
     wborder(cmdWindow, '|', '|', '-', '-', '+', '+', '+', '+');
     mvwprintw(cmdWindow, 1, 2, ":%s", currCmd.c_str());
     wmove(cmdWindow, 1, 2+currCmd.size()+1);
-    wrefresh(cmdWindow);
+    wnoutrefresh(cmdWindow);
 }
 
 void Editor::renderCurrPane(){
@@ -126,6 +126,7 @@ void Editor::renderCurrPane(){
     }else{
         getCurrPane().render();
     }
+    doupdate();
 }
 
 Viewport* Editor::getCurrViewport(){
@@ -368,6 +369,11 @@ void Editor::handleNormalModeInput(int ch){
         getCurrViewport()->moveCursor({0, -movementAmnt});
     if(ch == 'l')
         getCurrViewport()->moveCursor({movementAmnt, 0});
+
+    if(ch == CTRL('d'))
+        getCurrViewport()->scrollHalfPage(+1);
+    if(ch == CTRL('u'))
+        getCurrViewport()->scrollHalfPage(-1);
 
     if(ch == 'u'){
         Vec2<int> undoVec {getCurrBuffer()->undoLastChange()};

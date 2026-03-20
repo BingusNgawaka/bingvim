@@ -17,4 +17,6 @@ struct Viewport{
 
     void moveCursor(Vec2<int> dv, Mode mode = Mode::NORMAL);
     void setCursor(Vec2<int> pos, Mode mode = Mode::NORMAL);
+
+    void scrollHalfPage(int direction);
 };
