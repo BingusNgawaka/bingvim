@@ -1,5 +1,5 @@
 # BingVim
-html<div align="center">
+<div align="center">
     <img src="assets/icon.png" alt="demo" />
     ![C++](https://img.shields.io/badge/C++-00599C?style=flat&logo=cplusplus&logoColor=white)
     ![CMake](https://img.shields.io/badge/CMake-064F8C?style=flat&logo=cmake&logoColor=white)
